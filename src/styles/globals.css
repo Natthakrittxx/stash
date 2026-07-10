@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+@theme {
+  /* Colors. Cool neutrals only — DESIGN.md forbids warm tint by name. */
+  --color-bg: #f5f7f7;
+  --color-surface: #e7ebeb;
+  --color-border: #d3dad9;
+  --color-ink: #14181a; /* 17:1 on bg */
+  --color-muted: #5a6462; /* 5.5:1 on bg */
+  --color-accent: #005f66; /* 7.0:1 on bg — enamel, not sage */
+
+  /* Three voices. Latin serif first, Thai serif behind it: a Thai title has no
+     Latin serif to fall back on and would otherwise land in a system sans,
+     inverting the seam. */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif:
+    var(--font-source-serif), var(--font-noto-serif-thai), ui-serif, Georgia,
+    serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Fixed rem scale at ~1.2. No clamp() — this is a list you scan every day. */
+  --text-label: 0.8125rem;
+  --text-body: 0.9375rem;
+  --text-title: 1.125rem;
+  --text-headline: 1.5rem;
+  --text-display: 1.875rem;
+}
+
+/* Dark theme. Every utility reads var(--color-*), so redefining the tokens
+   flips the whole app. The ramp inverts but the rule holds: cool neutrals
+   tinted toward the accent's hue, never warm. The accent lifts from enamel to a
+   lighter teal so it clears contrast on a dark ground while still pairing with
+   dark text on its fill.
+
+   Precedence: the OS drives the theme until the toggle writes [data-theme] on
+   <html>. Scoping the media query to :not([data-theme]) means an explicit
+   choice always wins, and "light" needs no block — with the attribute set, the
+   media query stops matching and the base @theme tokens apply. The dark values
+   are duplicated across the two selectors on purpose; CSS has no mixin and a
+   seven-line repeat beats a build step. */
+:root {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --color-bg: #0e1413;
+    --color-surface: #172020;
+    /* ponytail: border stays a quiet hairline (~2:1), matching the light
+       theme's deliberate sub-3:1 choice; the focus ring and placeholder carry
+       component identity. Raise both toward 3:1 together if 1.4.11 is enforced. */
+    --color-border: #33413f;
+    --color-ink: #e9eeed; /* 15.9:1 on bg */
+    --color-muted: #9ba9a7; /* 7.6:1 on bg */
+    --color-accent: #4bc3cc; /* 8.8:1 on bg; dark text on fill 8.8:1 */
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #0e1413;
+  --color-surface: #172020;
+  --color-border: #33413f;
+  --color-ink: #e9eeed;
+  --color-muted: #9ba9a7;
+  --color-accent: #4bc3cc;
+}
+
+html {
+  background: var(--color-bg);
+  color: var(--color-ink);
+}
+
+/* Thai tone marks stack two levels above the baseline. Tight leading clips
+   them, and titles are exactly where Thai lands. */
+:lang(th),
+.leading-thai {
+  line-height: 1.75;
+}
+
+/* Row controls. Touch devices never match (hover: hover), so they simply stay
+   visible there — no long-press, no gesture handler, no fight with iOS text
+   selection on the one row type whose content you select and copy. */
+@media (hover: hover) {
+  .row-actions {
+    opacity: 0;
+  }
+
+  .row:hover .row-actions,
+  .row:focus-within .row-actions {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
