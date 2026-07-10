@@ -238,7 +238,7 @@ export function Stash({ items: initial, name }: { items: Item[]; name: string })
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
       <header className="flex items-baseline justify-between gap-4">
         <h1 className="font-serif text-headline text-ink">Stash</h1>
         <div className="flex items-center gap-3">

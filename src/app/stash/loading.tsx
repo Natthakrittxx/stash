@@ -2,7 +2,7 @@
 // which is the only loading state this route has.
 export default function Loading() {
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6" aria-busy="true">
+    <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6" aria-busy="true">
       <div className="h-6 w-24 animate-pulse rounded bg-surface" />
       <div className="mt-8 h-10 w-full animate-pulse rounded bg-surface" />
       <ul className="mt-6 divide-y divide-border border-t border-border">
