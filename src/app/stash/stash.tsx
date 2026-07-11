@@ -7,6 +7,7 @@ import {
   useOptimistic,
   useRef,
   useState,
+  useSyncExternalStore,
   useTransition,
 } from "react";
 
@@ -33,7 +34,9 @@ function reduce(list: Item[], patch: Patch): Item[] {
     case "add":
       return [...list, patch.item].sort(byTitle);
     case "update":
-      return list.map((i) => (i.id === patch.item.id ? patch.item : i)).sort(byTitle);
+      return list
+        .map((i) => (i.id === patch.item.id ? patch.item : i))
+        .sort(byTitle);
     case "delete":
       return list.filter((i) => i.id !== patch.id);
   }
@@ -92,7 +95,32 @@ const segment = `rounded px-2.5 py-1 text-label transition-colors duration-150 $
 const segmentOn = "bg-accent font-semibold text-bg";
 const segmentOff = "text-muted hover:text-ink";
 
-export function Stash({ items: initial, name }: { items: Item[]; name: string }) {
+// Sidebar section label. Left padding matches the filter rows' so the heading
+// sits flush with the labels beneath it.
+const railHeading = "px-2.5 text-label font-medium text-muted lg:px-2";
+
+// Tailwind's lg breakpoint (64rem). It gates the master–detail split: at or
+// above it there's room for a preview pane beside the list, so rows become lean
+// selectors; below it there's no room, so rows carry everything inline.
+function useWide() {
+  return useSyncExternalStore(
+    (cb) => {
+      const mq = window.matchMedia("(min-width: 64rem)");
+      mq.addEventListener("change", cb);
+      return () => mq.removeEventListener("change", cb);
+    },
+    () => window.matchMedia("(min-width: 64rem)").matches,
+    () => false, // server assumes narrow; desktop swaps in after hydration
+  );
+}
+
+export function Stash({
+  items: initial,
+  name,
+}: {
+  items: Item[];
+  name: string;
+}) {
   const router = useRouter();
   const [list, patch] = useOptimistic(initial, reduce);
   const [, startTransition] = useTransition();
@@ -104,11 +132,17 @@ export function Stash({ items: initial, name }: { items: Item[]; name: string })
   const [editing, setEditing] = useState<Item | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [undo, setUndo] = useState<Item | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const wide = useWide();
 
   const searchRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const undoRef = useRef<HTMLButtonElement>(null);
+  // The desktop preview pane. Enter on a selected row jumps focus here, to the
+  // found item's real actions, instead of tabbing past every remaining row.
+  const paneRef = useRef<HTMLElement>(null);
   // Where focus goes when the composer closes: the element that opened it.
   const returnFocus = useRef<HTMLElement | null>(null);
 
@@ -174,42 +208,82 @@ export function Stash({ items: initial, name }: { items: Item[]; name: string })
   }, [composerOpen, query]);
 
   const allTags = useMemo(
-    () => [...new Set(list.flatMap((i) => i.tags))].sort((a, b) => a.localeCompare(b)),
+    () =>
+      [...new Set(list.flatMap((i) => i.tags))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
     [list],
   );
 
   // Search runs over title, description, cmd and tags — the fields the spec
   // names. Thai has no word boundaries, so substring matching is the only
-  // option; toLowerCase is a harmless no-op on Thai text.
-  const found = useMemo(() => {
+  // option; toLowerCase is a harmless no-op on Thai text. Kind and tag are
+  // facets layered on top; the rail counts read off `searched`, so every count
+  // answers "how many match this search" and stays put no matter which facet is
+  // active.
+  const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return list.filter((item) => {
-      if (activeTag && !item.tags.includes(activeTag)) return false;
-      if (!q) return true;
-      return [item.title, item.description, item.cmd ?? "", ...item.tags].some(
+    if (!q) return list;
+    return list.filter((item) =>
+      [item.title, item.description, item.cmd ?? "", ...item.tags].some(
         (field) => field.toLowerCase().includes(q),
-      );
-    });
-  }, [list, query, activeTag]);
+      ),
+    );
+  }, [list, query]);
 
-  const counts = {
-    all: found.length,
-    tool: found.filter((i) => i.kind === "tool").length,
-    formula: found.filter((i) => i.kind === "formula").length,
+  const kindCounts: Record<Tab, number> = {
+    all: searched.length,
+    tool: searched.filter((i) => i.kind === "tool").length,
+    formula: searched.filter((i) => i.kind === "formula").length,
   };
 
-  const visible = tab === "all" ? found : found.filter((i) => i.kind === tab);
+  const tagCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const item of searched)
+      for (const t of item.tags) m.set(t, (m.get(t) ?? 0) + 1);
+    return m;
+  }, [searched]);
+
+  // The rail shows the tags the current search can still reach, plus the active
+  // one so a selection is always clearable even after a search excludes it.
+  const railTags = allTags.filter(
+    (t) => (tagCounts.get(t) ?? 0) > 0 || t === activeTag,
+  );
+
+  const visible = useMemo(
+    () =>
+      searched.filter(
+        (i) =>
+          (tab === "all" || i.kind === tab) &&
+          (!activeTag || i.tags.includes(activeTag)),
+      ),
+    [searched, tab, activeTag],
+  );
+
+  // The item shown in the preview pane. Resolved from `visible` by id every
+  // render, so it survives edits (fresh object, same id) and falls back to the
+  // top of the list when the selection is filtered out, deleted, or unset. Only
+  // exists on desktop; the pane has no room below lg.
+  const active = wide
+    ? (visible.find((i) => i.id === selectedId) ?? visible[0] ?? null)
+    : null;
 
   async function onSubmit(formData: FormData) {
     setError(null);
     const target = editing;
 
     if (target) {
-      patch({ type: "update", item: draftFrom(formData, target.id, target.userId) });
+      patch({
+        type: "update",
+        item: draftFrom(formData, target.id, target.userId),
+      });
       const result = await updateItem(target.id, formData);
       if (result.error) return setError(result.error);
     } else {
-      patch({ type: "add", item: draftFrom(formData, crypto.randomUUID(), userId) });
+      patch({
+        type: "add",
+        item: draftFrom(formData, crypto.randomUUID(), userId),
+      });
       const result = await createItem(formData);
       if (result.error) return setError(result.error);
     }
@@ -238,9 +312,9 @@ export function Stash({ items: initial, name }: { items: Item[]; name: string })
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
       <header className="flex items-baseline justify-between gap-4">
-        <h1 className="font-serif text-headline text-ink">Stash</h1>
+        <h1 className="text-headline text-ink font-serif">Stash</h1>
         <div className="flex items-center gap-3">
           <span className="text-label text-muted">{name}</span>
           <button
@@ -260,103 +334,87 @@ export function Stash({ items: initial, name }: { items: Item[]; name: string })
         </div>
       </header>
 
-      <div className="mt-8 flex flex-col gap-3">
-        <input
-          ref={searchRef}
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search titles, descriptions, commands, tags…"
-          aria-label="Search your stash"
-          className={field}
+      <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:gap-10">
+        <FilterRail
+          tab={tab}
+          onTab={setTab}
+          kindCounts={kindCounts}
+          tags={railTags}
+          tagCounts={tagCounts}
+          activeTag={activeTag}
+          onTag={setActiveTag}
         />
 
-        <div className="flex gap-1" role="group" aria-label="Filter by kind">
-          {(["all", "tool", "formula"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={tab === value}
-              onClick={() => setTab(value)}
-              className={`${segment} ${tab === value ? segmentOn : segmentOff}`}
-            >
-              {tab === value && <span aria-hidden="true">✓ </span>}
-              {value === "all" ? "All" : value === "tool" ? "Tools" : "Formulae"}{" "}
-              <span
-                className={`tabular-nums ${tab === value ? "text-bg" : "text-muted"}`}
-              >
-                {counts[value]}
-              </span>
-            </button>
-          ))}
-        </div>
+        <main className="min-w-0 flex-1">
+          <input
+            ref={searchRef}
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search titles, descriptions, commands, tags…"
+            aria-label="Search your stash"
+            className={field}
+          />
 
-        {allTags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by tag">
-            {allTags.map((tag) => {
-              const on = activeTag === tag;
-              return (
-                <button
-                  key={tag}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => setActiveTag(on ? null : tag)}
-                  className={`rounded-full border px-2.5 py-0.5 text-label transition-colors duration-150 ${focusRing} ${
-                    on
-                      ? "border-accent bg-accent text-bg"
-                      : "border-border text-muted hover:text-ink"
-                  }`}
-                >
-                  {/* Never color alone: the selected chip also carries a mark. */}
-                  {on && <span aria-hidden="true">✓ </span>}
-                  {tag}
-                </button>
-              );
-            })}
-          </div>
+          <Composer
+            open={composerOpen}
+            editing={editing}
+            error={error}
+            titleRef={titleRef}
+            triggerRef={triggerRef}
+            onOpen={() => openComposer()}
+            onCancel={closeComposer}
+            onSubmit={onSubmit}
+          />
+
+          {visible.length === 0 ? (
+            <Empty
+              hasItems={list.length > 0}
+              onAdd={() => openComposer()}
+              onClear={() => {
+                setQuery("");
+                setActiveTag(null);
+                setTab("all");
+              }}
+            />
+          ) : (
+            <ul className="divide-border border-border mt-6 divide-y border-t">
+              {visible.map((item) => (
+                <Row
+                  key={item.id}
+                  item={item}
+                  selectable={wide}
+                  selected={active?.id === item.id}
+                  onSelect={() => setSelectedId(item.id)}
+                  onActivate={() =>
+                    paneRef.current
+                      ?.querySelector<HTMLElement>("a, button")
+                      ?.focus()
+                  }
+                  onEdit={() => openComposer(item)}
+                  onDelete={() => onDelete(item)}
+                />
+              ))}
+            </ul>
+          )}
+        </main>
+
+        {active && (
+          <DetailPane
+            item={active}
+            containerRef={paneRef}
+            onEdit={() => openComposer(active)}
+            onDelete={() => onDelete(active)}
+          />
         )}
       </div>
-
-      <Composer
-        open={composerOpen}
-        editing={editing}
-        error={error}
-        titleRef={titleRef}
-        triggerRef={triggerRef}
-        onOpen={() => openComposer()}
-        onCancel={closeComposer}
-        onSubmit={onSubmit}
-      />
-
-      {visible.length === 0 ? (
-        <Empty
-          hasItems={list.length > 0}
-          onAdd={() => openComposer()}
-          onClear={() => {
-            setQuery("");
-            setActiveTag(null);
-            setTab("all");
-          }}
-        />
-      ) : (
-        <ul className="mt-6 divide-y divide-border border-t border-border">
-          {visible.map((item) => (
-            <Row
-              key={item.id}
-              item={item}
-              onEdit={() => openComposer(item)}
-              onDelete={() => onDelete(item)}
-            />
-          ))}
-        </ul>
-      )}
 
       {/* Delete and undo run with the composer closed, where its inline error
           banner never renders. Surface those failures here instead. */}
       {error && !composerOpen && (
         <div
           role="alert"
-          className="fixed inset-x-4 bottom-4 mx-auto flex max-w-sm items-center justify-between gap-4 rounded border border-border bg-surface px-4 py-3 shadow-lg"
+          className="border-border bg-surface fixed inset-x-4 bottom-4 mx-auto flex max-w-sm items-center justify-between gap-4 rounded border px-4 py-3 shadow-lg"
         >
           <span className="text-label text-ink">
             <span aria-hidden="true">✕ </span>
@@ -365,7 +423,7 @@ export function Stash({ items: initial, name }: { items: Item[]; name: string })
           <button
             type="button"
             onClick={() => setError(null)}
-            className={`text-label font-semibold text-accent underline underline-offset-2 ${focusRing}`}
+            className={`text-label text-accent font-semibold underline underline-offset-2 ${focusRing}`}
           >
             Dismiss
           </button>
@@ -375,20 +433,146 @@ export function Stash({ items: initial, name }: { items: Item[]; name: string })
       {undo && (
         <div
           role="status"
-          className="fixed inset-x-4 bottom-4 mx-auto flex max-w-sm items-center justify-between gap-4 rounded border border-border bg-surface px-4 py-3 shadow-lg"
+          className="border-border bg-surface fixed inset-x-4 bottom-4 mx-auto flex max-w-sm items-center justify-between gap-4 rounded border px-4 py-3 shadow-lg"
         >
           <span className="text-label text-ink">Deleted “{undo.title}”</span>
           <button
             ref={undoRef}
             type="button"
             onClick={() => onUndo(undo)}
-            className={`text-label font-semibold text-accent underline underline-offset-2 ${focusRing}`}
+            className={`text-label text-accent font-semibold underline underline-offset-2 ${focusRing}`}
           >
             Undo
           </button>
         </div>
       )}
     </div>
+  );
+}
+
+// The card-catalog drawer: kinds and tags as one quiet filter list. A vertical
+// rail on desktop (where it earns the width a stretched search box couldn't);
+// above the list, wrapping into chips, on narrow screens. Accent + ✓ marks the
+// one active filter — never color alone, never more than a sliver of the screen.
+function FilterRail({
+  tab,
+  onTab,
+  kindCounts,
+  tags,
+  tagCounts,
+  activeTag,
+  onTag,
+}: {
+  tab: Tab;
+  onTab: (tab: Tab) => void;
+  kindCounts: Record<Tab, number>;
+  tags: string[];
+  tagCounts: Map<string, number>;
+  activeTag: string | null;
+  onTag: (tag: string | null) => void;
+}) {
+  const kinds: { value: Tab; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "tool", label: "Tools" },
+    { value: "formula", label: "Formulae" },
+  ];
+
+  return (
+    <aside className="lg:w-52 lg:shrink-0">
+      {/* ponytail: sticky pins the rail; a tag list taller than the viewport
+          just scrolls with the page. Add internal overflow only if a stash ever
+          grows hundreds of tags. */}
+      {/* Quiet sans section labels — the app's voice naming the two axes. Not
+          the tracked-uppercase eyebrow the bans forbid: a filter rail with a
+          Kind and a Tags group is standard product furniture, so they stay
+          sentence-case and muted, and label their group via aria-labelledby. */}
+      <nav className="flex flex-col gap-5 lg:sticky lg:top-10 lg:gap-6">
+        <div>
+          <h2 id="rail-kind" className={railHeading}>
+            Kind
+          </h2>
+          <div
+            role="group"
+            aria-labelledby="rail-kind"
+            className="mt-1.5 flex flex-wrap gap-1 lg:flex-col lg:gap-0.5"
+          >
+            {kinds.map(({ value, label }) => (
+              <FilterRow
+                key={value}
+                label={label}
+                count={kindCounts[value]}
+                active={tab === value}
+                onClick={() => onTab(value)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {tags.length > 0 && (
+          <div>
+            <h2 id="rail-tags" className={railHeading}>
+              Tags
+            </h2>
+            <div
+              role="group"
+              aria-labelledby="rail-tags"
+              className="mt-1.5 flex flex-wrap gap-1 lg:flex-col lg:gap-0.5"
+            >
+              {tags.map((tag) => {
+                const on = activeTag === tag;
+                return (
+                  <FilterRow
+                    key={tag}
+                    label={tag}
+                    count={tagCounts.get(tag) ?? 0}
+                    active={on}
+                    onClick={() => onTag(on ? null : tag)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </nav>
+    </aside>
+  );
+}
+
+// One filter atom for both sections: an inline pill on mobile, a full-width row
+// with a right-aligned count on desktop. The count is metadata, so it stays
+// muted even when the label lights up.
+function FilterRow({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`text-label flex items-center gap-2 rounded px-2.5 py-1 transition-colors duration-150 lg:w-full lg:justify-between lg:px-2 lg:py-1.5 ${focusRing} ${
+        active
+          ? "bg-accent text-bg font-semibold"
+          : "text-muted hover:bg-surface hover:text-ink"
+      }`}
+    >
+      <span className="flex min-w-0 items-center gap-1">
+        {active && <span aria-hidden="true">✓</span>}
+        <span className="truncate">{label}</span>
+      </span>
+      <span
+        className={`shrink-0 tabular-nums ${active ? "text-bg" : "text-muted"}`}
+      >
+        {count}
+      </span>
+    </button>
   );
 }
 
@@ -423,12 +607,14 @@ function Composer({
         ref={triggerRef}
         type="button"
         onClick={onOpen}
-        className={`mt-6 flex w-full items-center justify-between rounded border border-dashed border-border px-3 py-2.5 text-left text-body text-muted transition-colors duration-150 hover:border-accent hover:text-ink ${focusRing}`}
+        className={`border-border text-body text-muted hover:border-accent hover:text-ink mt-6 flex w-full items-center justify-between rounded border border-dashed px-3 py-2.5 text-left transition-colors duration-150 ${focusRing}`}
       >
         <span>
           <span aria-hidden="true">+ </span>Save a tool or a formula…
         </span>
-        <kbd className="rounded border border-border px-1.5 py-0.5 text-label">a</kbd>
+        <kbd className="border-border text-label rounded border px-1.5 py-0.5">
+          a
+        </kbd>
       </button>
     );
   }
@@ -437,11 +623,15 @@ function Composer({
     <form
       key={editing?.id ?? "new"}
       action={onSubmit}
-      className="mt-6 flex flex-col gap-3 rounded border border-border bg-surface p-4"
+      className="border-border bg-surface mt-6 flex flex-col gap-3 rounded border p-4"
     >
       <input type="hidden" name="kind" value={kind} />
 
-      <div className="flex gap-1" role="group" aria-label="What are you saving?">
+      <div
+        className="flex gap-1"
+        role="group"
+        aria-label="What are you saving?"
+      >
         {(["tool", "formula"] as const).map((value) => (
           <button
             key={value}
@@ -517,18 +707,18 @@ function Composer({
       <div className="flex items-center gap-2">
         <button
           type="submit"
-          className={`rounded bg-accent px-4 py-2 text-body text-bg transition-opacity duration-150 hover:opacity-90 ${focusRing}`}
+          className={`bg-accent text-body text-bg rounded px-4 py-2 transition-opacity duration-150 hover:opacity-90 ${focusRing}`}
         >
           {editing ? "Save changes" : "Save"}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className={`rounded px-3 py-2 text-body text-muted hover:text-ink ${focusRing}`}
+          className={`text-body text-muted hover:text-ink rounded px-3 py-2 ${focusRing}`}
         >
           Cancel
         </button>
-        <span className="ml-auto text-label text-muted">Esc to close</span>
+        <span className="text-label text-muted ml-auto">Esc to close</span>
       </div>
     </form>
   );
@@ -536,13 +726,101 @@ function Composer({
 
 function Row({
   item,
+  selectable,
+  selected,
+  onSelect,
+  onActivate,
   onEdit,
   onDelete,
 }: {
   item: Item;
+  selectable: boolean;
+  selected: boolean;
+  onSelect: () => void;
+  onActivate?: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  // Desktop master: a lean summary that drives the preview pane. One button per
+  // row and no nested links — Open/Copy/Edit/Delete live in the pane — so a
+  // screen reader hears exactly one "select" control per row, and the title
+  // that truncates here is shown in full over there.
+  if (selectable) {
+    // The keyboard retrieval path. Focus follows selection (onFocus selects, so
+    // ↑/↓ scrub the preview as they walk the list); Enter hands focus to the
+    // pane's first action — Open for a tool, Copy for a formula — so opening the
+    // found thing is one keystroke, not a tab through every remaining row.
+    // ponytail: ↑/↓ don't wrap and Edit/Delete still trail the pane in tab
+    // order; add wrap / an "o to open" accelerator if daily use asks for it.
+    function onKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const li = event.currentTarget.closest("li");
+        const next =
+          event.key === "ArrowDown"
+            ? li?.nextElementSibling
+            : li?.previousElementSibling;
+        next?.querySelector("button")?.focus();
+      } else if (event.key === "Enter" && onActivate) {
+        event.preventDefault();
+        onActivate();
+      }
+    }
+
+    return (
+      <li>
+        <button
+          type="button"
+          onClick={onSelect}
+          onFocus={onSelect}
+          onKeyDown={onKeyDown}
+          aria-current={selected ? "true" : undefined}
+          className={`flex w-full items-start gap-4 py-4 text-left transition-colors duration-150 ${focusRing} ${
+            selected ? "bg-surface" : "hover:bg-surface"
+          }`}
+        >
+          <RowTile item={item} />
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
+              <span
+                className={`text-title leading-thai text-ink truncate font-serif ${
+                  selected ? "font-semibold" : ""
+                }`}
+              >
+                {item.title}
+              </span>
+              {item.url && (
+                <span className="text-label text-muted shrink-0">
+                  {hostOf(item.url)}
+                </span>
+              )}
+            </div>
+
+            {item.tags.length > 0 && (
+              <ul className="text-label text-muted mt-1.5 flex flex-wrap gap-x-2">
+                {item.tags.map((tag) => (
+                  <li key={tag}>{tag}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Selection is never color alone: a chevron appears (shape) and turns
+              accent (color), and aria-current carries it to the screen reader. */}
+          <span
+            aria-hidden="true"
+            className={`text-title self-center ${
+              selected ? "text-accent" : "text-transparent"
+            }`}
+          >
+            ›
+          </span>
+        </button>
+      </li>
+    );
+  }
+
   return (
     <li className="row group flex items-start gap-4 py-4">
       <RowTile item={item} />
@@ -554,28 +832,32 @@ function Row({
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              className={`truncate font-serif text-title leading-thai text-ink underline-offset-2 hover:underline ${focusRing}`}
+              className={`text-title leading-thai text-ink truncate font-serif underline-offset-2 hover:underline ${focusRing}`}
             >
               {item.title}
             </a>
           ) : (
-            <h2 className="truncate font-serif text-title leading-thai text-ink">
+            <h2 className="text-title leading-thai text-ink truncate font-serif">
               {item.title}
             </h2>
           )}
           {item.url && (
-            <span className="shrink-0 text-label text-muted">{hostOf(item.url)}</span>
+            <span className="text-label text-muted shrink-0">
+              {hostOf(item.url)}
+            </span>
           )}
         </div>
 
         {item.cmd && <CommandBlock cmd={item.cmd} />}
 
         {item.description && (
-          <p className="mt-1 text-body leading-thai text-muted">{item.description}</p>
+          <p className="text-body leading-thai text-muted mt-1">
+            {item.description}
+          </p>
         )}
 
         {item.tags.length > 0 && (
-          <ul className="mt-1.5 flex flex-wrap gap-x-2 text-label text-muted">
+          <ul className="text-label text-muted mt-1.5 flex flex-wrap gap-x-2">
             {item.tags.map((tag) => (
               <li key={tag}>{tag}</li>
             ))}
@@ -588,7 +870,7 @@ function Row({
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${item.title}`}
-          className={`rounded px-2 py-1 text-label text-muted hover:text-ink ${focusRing}`}
+          className={`text-label text-muted hover:text-ink rounded px-2 py-1 ${focusRing}`}
         >
           Edit
         </button>
@@ -596,7 +878,7 @@ function Row({
           type="button"
           onClick={onDelete}
           aria-label={`Delete ${item.title}`}
-          className={`rounded px-2 py-1 text-label text-muted hover:text-ink ${focusRing}`}
+          className={`text-label text-muted hover:text-ink rounded px-2 py-1 ${focusRing}`}
         >
           Delete
         </button>
@@ -605,20 +887,26 @@ function Row({
   );
 }
 
-// A 44px leading tile on every row keeps the title column aligned — the mistake
-// the first preview attempt made was giving tools a thumbnail and formulas none.
-// Tool: og:image, falling back to a host-letter monogram. Formula: a terminal
-// glyph, since a command has no page to show. Decorative throughout — the title
-// carries the meaning, so the tile is aria-hidden.
+// A landscape 112×64 leading tile on every row keeps the title column aligned —
+// the mistake the first preview attempt made was giving tools a thumbnail and
+// formulas none. Sized to the og:image's ~1.9:1 aspect: a square crop reduced
+// the preview to an unreadable center sliver, so a page was no longer
+// recognizable at a glance. Tool: og:image, falling back to a host-letter
+// monogram. Formula: a terminal glyph, since a command has no page to show.
+// Decorative throughout — the title carries the meaning, so the tile is
+// aria-hidden.
 const tileBase =
-  "grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded border border-border bg-surface";
+  "grid h-16 w-28 shrink-0 place-items-center overflow-hidden rounded border border-border bg-surface";
 
 function RowTile({ item }: { item: Item }) {
   const [broken, setBroken] = useState(false);
 
   if (item.kind === "formula") {
     return (
-      <div className={`${tileBase} font-mono text-label text-muted`} aria-hidden="true">
+      <div
+        className={`${tileBase} text-title text-muted font-mono`}
+        aria-hidden="true"
+      >
         $_
       </div>
     );
@@ -635,8 +923,8 @@ function RowTile({ item }: { item: Item }) {
           alt=""
           aria-hidden="true"
           loading="lazy"
-          width={44}
-          height={44}
+          width={112}
+          height={64}
           onError={() => setBroken(true)}
           className="h-full w-full object-cover"
         />
@@ -646,7 +934,138 @@ function RowTile({ item }: { item: Item }) {
 
   const letter = (hostOf(item.url ?? item.title)[0] ?? "•").toUpperCase();
   return (
-    <div className={`${tileBase} font-serif text-title text-ink`} aria-hidden="true">
+    <div
+      className={`${tileBase} text-headline text-ink font-serif`}
+      aria-hidden="true"
+    >
+      {letter}
+    </div>
+  );
+}
+
+// The preview pane — the right column of the desktop master–detail. It shows
+// the selected item at full size: the og:image the row can only thumbnail, the
+// untruncated title, and the primary action (open a tool, copy a formula). This
+// is what earns the second column its width. A rail with no real job here would
+// be the SaaS filler the product bans, so the pane holds the actions the lean
+// desktop rows dropped. Hidden below lg, where there's no room for it.
+function DetailPane({
+  item,
+  containerRef,
+  onEdit,
+  onDelete,
+}: {
+  item: Item;
+  containerRef: React.RefObject<HTMLElement | null>;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <aside
+      ref={containerRef}
+      aria-label="Preview"
+      aria-live="polite"
+      className="hidden lg:sticky lg:top-10 lg:flex lg:w-96 lg:shrink-0 lg:flex-col lg:gap-4"
+    >
+      <PreviewTile item={item} />
+
+      <h2 className="text-headline leading-thai text-ink font-serif text-balance">
+        {item.title}
+      </h2>
+
+      {item.url && (
+        <div className="flex items-center gap-3">
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`bg-accent text-body text-bg rounded px-4 py-2 transition-opacity duration-150 hover:opacity-90 ${focusRing}`}
+          >
+            Open <span aria-hidden="true">↗</span>
+          </a>
+          <span className="text-label text-muted truncate">
+            {hostOf(item.url)}
+          </span>
+        </div>
+      )}
+
+      {item.cmd && <CommandBlock cmd={item.cmd} />}
+
+      {item.description && (
+        <p className="text-body leading-thai text-ink">{item.description}</p>
+      )}
+
+      {item.tags.length > 0 && (
+        <ul className="text-label text-muted flex flex-wrap gap-x-2 gap-y-1">
+          {item.tags.map((tag) => (
+            <li key={tag}>{tag}</li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-1 flex gap-1">
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Edit ${item.title}`}
+          className={`text-label text-muted hover:text-ink rounded px-2 py-1 ${focusRing}`}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label={`Delete ${item.title}`}
+          className={`text-label text-muted hover:text-ink rounded px-2 py-1 ${focusRing}`}
+        >
+          Delete
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+// Full-size counterpart to RowTile: the og:image at a readable size, or the same
+// monogram / terminal-glyph fallbacks scaled up to the pane's ~1.9:1 frame.
+function PreviewTile({ item }: { item: Item }) {
+  const [broken, setBroken] = useState(false);
+  const base =
+    "grid aspect-[1.9] w-full place-items-center overflow-hidden rounded border border-border bg-surface";
+
+  if (item.kind === "formula") {
+    return (
+      <div
+        className={`${base} text-display text-muted font-mono`}
+        aria-hidden="true"
+      >
+        $_
+      </div>
+    );
+  }
+
+  if (item.image && !broken) {
+    return (
+      <div className={base}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary
+            bookmarked hosts can't be enumerated for next/image; see RowTile. */}
+        <img
+          src={item.image}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          onError={() => setBroken(true)}
+          className="h-full w-full object-cover"
+        />
+      </div>
+    );
+  }
+
+  const letter = (hostOf(item.url ?? item.title)[0] ?? "•").toUpperCase();
+  return (
+    <div
+      className={`${base} text-display text-ink font-serif`}
+      aria-hidden="true"
+    >
       {letter}
     </div>
   );
@@ -668,18 +1087,22 @@ function CommandBlock({ cmd }: { cmd: string }) {
   }
 
   return (
-    <div className="mt-1.5 flex items-start gap-2 rounded bg-surface px-3 py-2">
-      <code className="min-w-0 flex-1 overflow-x-auto whitespace-pre font-mono text-body text-ink">
+    <div className="bg-surface mt-1.5 flex items-start gap-2 rounded px-3 py-2">
+      <code className="text-body text-ink min-w-0 flex-1 overflow-x-auto font-mono whitespace-pre">
         {cmd}
       </code>
       <button
         type="button"
         onClick={copy}
         aria-label={`Copy command: ${cmd}`}
-        className={`shrink-0 rounded px-1.5 py-0.5 text-label text-muted hover:text-ink ${focusRing}`}
+        className={`text-label text-muted hover:text-ink shrink-0 rounded px-1.5 py-0.5 ${focusRing}`}
       >
         {/* Never color alone: the state is a word and a mark, not a green flash. */}
-        {state === "copied" ? "✓ Copied" : state === "failed" ? "✕ Failed" : "Copy"}
+        {state === "copied"
+          ? "✓ Copied"
+          : state === "failed"
+            ? "✕ Failed"
+            : "Copy"}
       </button>
     </div>
   );
@@ -697,11 +1120,11 @@ function Empty({
   if (hasItems) {
     return (
       <div className="mt-16 text-center">
-        <p className="font-serif text-title text-ink">Nothing matches that.</p>
+        <p className="text-title text-ink font-serif">Nothing matches that.</p>
         <button
           type="button"
           onClick={onClear}
-          className={`mt-2 text-label text-accent underline underline-offset-2 ${focusRing}`}
+          className={`text-label text-accent mt-2 underline underline-offset-2 ${focusRing}`}
         >
           Clear the filters
         </button>
@@ -711,22 +1134,29 @@ function Empty({
 
   return (
     <div className="mt-16 max-w-md">
-      <p className="font-serif text-title text-ink">Your stash is empty.</p>
-      <p className="mt-2 text-body text-muted">
-        Two things live here. A <strong className="font-semibold text-ink">tool</strong>{" "}
-        is a link you keep losing. A{" "}
-        <strong className="font-semibold text-ink">formula</strong> is a command you keep
-        re-deriving.
+      <p className="text-title text-ink font-serif">Your stash is empty.</p>
+      <p className="text-body text-muted mt-2">
+        Two things live here. A{" "}
+        <strong className="text-ink font-semibold">tool</strong> is a link you
+        keep losing. A{" "}
+        <strong className="text-ink font-semibold">formula</strong> is a command
+        you keep re-deriving.
       </p>
-      <p className="mt-4 text-body text-muted">
-        Press <kbd className="rounded border border-border px-1.5 py-0.5 text-label">a</kbd>{" "}
-        to save one, <kbd className="rounded border border-border px-1.5 py-0.5 text-label">/</kbd>{" "}
+      <p className="text-body text-muted mt-4">
+        Press{" "}
+        <kbd className="border-border text-label rounded border px-1.5 py-0.5">
+          a
+        </kbd>{" "}
+        to save one,{" "}
+        <kbd className="border-border text-label rounded border px-1.5 py-0.5">
+          /
+        </kbd>{" "}
         to search once you have a few.
       </p>
       <button
         type="button"
         onClick={onAdd}
-        className={`mt-6 rounded bg-accent px-4 py-2 text-body text-bg transition-opacity duration-150 hover:opacity-90 ${focusRing}`}
+        className={`bg-accent text-body text-bg mt-6 rounded px-4 py-2 transition-opacity duration-150 hover:opacity-90 ${focusRing}`}
       >
         Save your first
       </button>
