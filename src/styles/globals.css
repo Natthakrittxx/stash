@@ -9,6 +9,17 @@
   --color-muted: #5a6462; /* 5.5:1 on bg */
   --color-accent: #005f66; /* 7.0:1 on bg — enamel, not sage */
 
+  /* Terminal surface for formula cards. Fixed dark in both themes — a command
+     lives in a console, so its card is always a dark console. These are the
+     dark-theme neutral values, pinned so they never flip with the app theme.
+     Contrast on term-bg: ink 15.9:1, muted 7.6:1, accent 8.8:1 — all AA. */
+  --color-term-bg: #0e1413;
+  --color-term-surface: #172020;
+  --color-term-border: #33413f;
+  --color-term-ink: #e9eeed;
+  --color-term-muted: #9ba9a7;
+  --color-term-accent: #4bc3cc;
+
   /* Three voices. Latin serif first, Thai serif behind it: a Thai title has no
      Latin serif to fall back on and would otherwise land in a system sans,
      inverting the seam. */

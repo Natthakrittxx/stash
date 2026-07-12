@@ -260,12 +260,25 @@ export function Stash({
     [searched, tab, activeTag],
   );
 
-  // The item shown in the preview pane. Resolved from `visible` by id every
-  // render, so it survives edits (fresh object, same id) and falls back to the
-  // top of the list when the selection is filtered out, deleted, or unset. Only
-  // exists on desktop; the pane has no room below lg.
+  // Two kinds, two treatments: tools stay master rows that drive the preview
+  // pane; formulae render as self-contained terminal cards (a command is its
+  // own content, so it shows in full inline). Splitting the visible list this
+  // way is the whole "separate formulae from tools" ask.
+  const tools = useMemo(
+    () => visible.filter((i) => i.kind === "tool"),
+    [visible],
+  );
+  const formulae = useMemo(
+    () => visible.filter((i) => i.kind === "formula"),
+    [visible],
+  );
+
+  // The item shown in the preview pane. Only tools are selectable — a formula's
+  // terminal card already shows everything the pane would — so the pane resolves
+  // from `tools`, falling back to the top tool when the selection is filtered
+  // out, deleted, or unset. Only exists on desktop; the pane has no room below lg.
   const active = wide
-    ? (visible.find((i) => i.id === selectedId) ?? visible[0] ?? null)
+    ? (tools.find((i) => i.id === selectedId) ?? tools[0] ?? null)
     : null;
 
   async function onSubmit(formData: FormData) {
@@ -312,7 +325,7 @@ export function Stash({
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
+    <div className="mx-auto max-w-none px-4 py-10 sm:px-6">
       <header className="flex items-baseline justify-between gap-4">
         <h1 className="text-headline text-ink font-serif">Stash</h1>
         <div className="flex items-center gap-3">
@@ -378,24 +391,53 @@ export function Stash({
               }}
             />
           ) : (
-            <ul className="divide-border border-border mt-6 divide-y border-t">
-              {visible.map((item) => (
-                <Row
-                  key={item.id}
-                  item={item}
-                  selectable={wide}
-                  selected={active?.id === item.id}
-                  onSelect={() => setSelectedId(item.id)}
-                  onActivate={() =>
-                    paneRef.current
-                      ?.querySelector<HTMLElement>("a, button")
-                      ?.focus()
-                  }
-                  onEdit={() => openComposer(item)}
-                  onDelete={() => onDelete(item)}
-                />
-              ))}
-            </ul>
+            <div className="mt-6 flex flex-col gap-10">
+              {tools.length > 0 && (
+                <section>
+                  {tab === "all" && (
+                    <SectionHeading count={tools.length}>Tools</SectionHeading>
+                  )}
+                  <ul className="divide-border border-border divide-y border-t">
+                    {tools.map((item) => (
+                      <Row
+                        key={item.id}
+                        item={item}
+                        selectable={wide}
+                        selected={active?.id === item.id}
+                        onSelect={() => setSelectedId(item.id)}
+                        onActivate={() =>
+                          paneRef.current
+                            ?.querySelector<HTMLElement>("a, button")
+                            ?.focus()
+                        }
+                        onEdit={() => openComposer(item)}
+                        onDelete={() => onDelete(item)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {formulae.length > 0 && (
+                <section>
+                  {tab === "all" && (
+                    <SectionHeading count={formulae.length}>
+                      Formulae
+                    </SectionHeading>
+                  )}
+                  <ul className="flex flex-col gap-3">
+                    {formulae.map((item) => (
+                      <FormulaCard
+                        key={item.id}
+                        item={item}
+                        onEdit={() => openComposer(item)}
+                        onDelete={() => onDelete(item)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </div>
           )}
         </main>
 
@@ -1161,5 +1203,141 @@ function Empty({
         Save your first
       </button>
     </div>
+  );
+}
+
+// The one label that separates the two kinds in the "All" view. Sentence-case
+// muted sans with a count — the same quiet voice as the rail's "Kind"/"Tags"
+// headings, deliberately not the tracked-uppercase eyebrow the bans forbid.
+function SectionHeading({
+  count,
+  children,
+}: {
+  count: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border-border mb-4 flex items-baseline gap-2 border-b pb-2">
+      <h2 className="text-label text-muted font-medium">{children}</h2>
+      <span className="text-label text-muted tabular-nums">{count}</span>
+    </div>
+  );
+}
+
+// Clipboard write with a two-second, word-plus-mark confirmation (never a bare
+// green flash — state never rides on color alone). Themeable via className so it
+// reads on both the light command box and the dark terminal card.
+function CopyButton({ text, className }: { text: string; className: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setState("copied");
+    } catch {
+      // Clipboard rejects on denied permission and does not exist outside a
+      // secure context.
+      setState("failed");
+    }
+    setTimeout(() => setState("idle"), 2000);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={`Copy command: ${text}`}
+      className={className}
+    >
+      {state === "copied"
+        ? "✓ Copied"
+        : state === "failed"
+          ? "✕ Failed"
+          : "Copy"}
+    </button>
+  );
+}
+
+// A formula rendered as what it is: a line you run in a console. Always-dark
+// terminal chrome (the term-* tokens don't flip with the app theme), a teal ❯
+// prompt, the command in mono, and a copy button — the retrieval act for a
+// formula. Three monochrome dots read as a window without dragging the garish
+// traffic-light primaries into a cool-neutral palette. Edit/Delete ride the
+// same hover-reveal .row-actions as a tool row; on touch they stay visible.
+// ponytail: with formulae routed here, the formula branches in Row/RowTile/
+// DetailPane/CommandBlock now only ever see tools. Left in place, not deleted —
+// they still correctly render a formula if anything ever selects one.
+function FormulaCard({
+  item,
+  onEdit,
+  onDelete,
+}: {
+  item: Item;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <li className="row group border-term-border overflow-hidden rounded-lg border">
+      <div className="bg-term-surface flex items-center gap-3 px-3 py-2">
+        <span aria-hidden="true" className="flex shrink-0 gap-1.5">
+          <span className="bg-term-border size-2.5 rounded-full" />
+          <span className="bg-term-border size-2.5 rounded-full" />
+          <span className="bg-term-border size-2.5 rounded-full" />
+        </span>
+        <h2 className="text-label text-term-muted min-w-0 flex-1 truncate font-mono">
+          {item.title}
+        </h2>
+        <div className="row-actions flex shrink-0 gap-1 transition-opacity duration-150">
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label={`Edit ${item.title}`}
+            className="text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent rounded px-2 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label={`Delete ${item.title}`}
+            className="text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent rounded px-2 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-term-bg px-3 py-3">
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden="true"
+            className="text-term-accent shrink-0 font-mono leading-relaxed select-none"
+          >
+            ❯
+          </span>
+          <code className="text-body text-term-ink min-w-0 flex-1 overflow-x-auto font-mono leading-relaxed whitespace-pre">
+            {item.cmd}
+          </code>
+          <CopyButton
+            text={item.cmd ?? ""}
+            className="text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent shrink-0 rounded px-1.5 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
+          />
+        </div>
+
+        {item.description && (
+          <p className="text-label text-term-muted mt-2 pl-6 font-mono">
+            # {item.description}
+          </p>
+        )}
+
+        {item.tags.length > 0 && (
+          <ul className="text-label text-term-muted mt-2 flex flex-wrap gap-x-3 pl-6 font-mono">
+            {item.tags.map((tag) => (
+              <li key={tag}>#{tag}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </li>
   );
 }
