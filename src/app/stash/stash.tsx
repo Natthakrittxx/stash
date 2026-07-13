@@ -326,32 +326,33 @@ export function Stash({
 
   return (
     <div className="mx-auto max-w-none px-4 py-10 sm:px-6">
-      <header className="flex items-baseline justify-between gap-4">
-        <h1 className="text-headline text-ink font-serif">Stash</h1>
-        <div className="flex items-center gap-3">
-          <span className="text-label text-muted">{name}</span>
-          <button
-            type="button"
-            onClick={() =>
-              startTransition(async () => {
-                await authClient.signOut();
-                router.push("/login");
-                router.refresh();
-              })
-            }
-            className={`text-label text-muted hover:text-ink ${focusRing}`}
-          >
-            Sign out
-          </button>
-          <ThemeToggle />
+      <header className="flex flex-col gap-5">
+        <div className="flex items-baseline justify-between gap-4">
+          <h1 className="text-headline text-ink font-serif">Stash</h1>
+          <div className="flex items-center gap-3">
+            <span className="text-label text-muted">{name}</span>
+            <button
+              type="button"
+              onClick={() =>
+                startTransition(async () => {
+                  await authClient.signOut();
+                  router.push("/login");
+                  router.refresh();
+                })
+              }
+              className={`text-label text-muted hover:text-ink ${focusRing}`}
+            >
+              Sign out
+            </button>
+            <ThemeToggle />
+          </div>
         </div>
+
+        <KindTabs tab={tab} onTab={setTab} counts={kindCounts} />
       </header>
 
       <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:gap-10">
         <FilterRail
-          tab={tab}
-          onTab={setTab}
-          kindCounts={kindCounts}
           tags={railTags}
           tagCounts={tagCounts}
           activeTag={activeTag}
@@ -380,65 +381,73 @@ export function Stash({
             onSubmit={onSubmit}
           />
 
-          {visible.length === 0 ? (
-            <Empty
-              hasItems={list.length > 0}
-              onAdd={() => openComposer()}
-              onClear={() => {
-                setQuery("");
-                setActiveTag(null);
-                setTab("all");
-              }}
-            />
-          ) : (
-            <div className="mt-6 flex flex-col gap-10">
-              {tools.length > 0 && (
-                <section>
-                  {tab === "all" && (
-                    <SectionHeading count={tools.length}>Tools</SectionHeading>
-                  )}
-                  <ul className="divide-border border-border divide-y border-t">
-                    {tools.map((item) => (
-                      <Row
-                        key={item.id}
-                        item={item}
-                        selectable={wide}
-                        selected={active?.id === item.id}
-                        onSelect={() => setSelectedId(item.id)}
-                        onActivate={() =>
-                          paneRef.current
-                            ?.querySelector<HTMLElement>("a, button")
-                            ?.focus()
-                        }
-                        onEdit={() => openComposer(item)}
-                        onDelete={() => onDelete(item)}
-                      />
-                    ))}
-                  </ul>
-                </section>
-              )}
+          <div
+            role="tabpanel"
+            id="kind-panel"
+            aria-labelledby={`kind-tab-${tab}`}
+          >
+            {visible.length === 0 ? (
+              <Empty
+                hasItems={list.length > 0}
+                onAdd={() => openComposer()}
+                onClear={() => {
+                  setQuery("");
+                  setActiveTag(null);
+                  setTab("all");
+                }}
+              />
+            ) : (
+              <div className="mt-6 flex flex-col gap-10">
+                {tools.length > 0 && (
+                  <section>
+                    {tab === "all" && (
+                      <SectionHeading count={tools.length}>
+                        Tools
+                      </SectionHeading>
+                    )}
+                    <ul className="divide-border border-border divide-y border-t">
+                      {tools.map((item) => (
+                        <Row
+                          key={item.id}
+                          item={item}
+                          selectable={wide}
+                          selected={active?.id === item.id}
+                          onSelect={() => setSelectedId(item.id)}
+                          onActivate={() =>
+                            paneRef.current
+                              ?.querySelector<HTMLElement>("a, button")
+                              ?.focus()
+                          }
+                          onEdit={() => openComposer(item)}
+                          onDelete={() => onDelete(item)}
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                )}
 
-              {formulae.length > 0 && (
-                <section>
-                  {tab === "all" && (
-                    <SectionHeading count={formulae.length}>
-                      Formulae
-                    </SectionHeading>
-                  )}
-                  <ul className="flex flex-col gap-3">
-                    {formulae.map((item) => (
-                      <FormulaCard
-                        key={item.id}
-                        item={item}
-                        onEdit={() => openComposer(item)}
-                        onDelete={() => onDelete(item)}
-                      />
-                    ))}
-                  </ul>
-                </section>
-              )}
-            </div>
-          )}
+                {formulae.length > 0 && (
+                  <section>
+                    {tab === "all" && (
+                      <SectionHeading count={formulae.length}>
+                        Formulae
+                      </SectionHeading>
+                    )}
+                    <ul className="flex flex-col gap-3">
+                      {formulae.map((item) => (
+                        <FormulaCard
+                          key={item.id}
+                          item={item}
+                          onEdit={() => openComposer(item)}
+                          onDelete={() => onDelete(item)}
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                )}
+              </div>
+            )}
+          </div>
         </main>
 
         {active && (
@@ -492,89 +501,141 @@ export function Stash({
   );
 }
 
-// The card-catalog drawer: kinds and tags as one quiet filter list. A vertical
-// rail on desktop (where it earns the width a stretched search box couldn't);
-// above the list, wrapping into chips, on narrow screens. Accent + ✓ marks the
-// one active filter — never color alone, never more than a sliver of the screen.
-function FilterRail({
+// The kind switch, lifted into the hero: All / Tools / Formulae as one
+// horizontal control that swaps the list view. A real ARIA tablist — roving
+// tabindex, ←/→ (and ↑/↓) move and activate, selection follows focus — driving
+// the `kind-panel` results region. Carries a visible "Kind" heading so it has
+// the same axis label and heading-nav discoverability as the sidebar's Tags.
+// Selected treatment is accent fill + a ✓ (state is never color alone); the ✓
+// slot is reserved on every tab and the active tab doesn't change weight, so
+// selection never reflows its neighbors.
+function KindTabs({
   tab,
   onTab,
-  kindCounts,
-  tags,
-  tagCounts,
-  activeTag,
-  onTag,
+  counts,
 }: {
   tab: Tab;
   onTab: (tab: Tab) => void;
-  kindCounts: Record<Tab, number>;
-  tags: string[];
-  tagCounts: Map<string, number>;
-  activeTag: string | null;
-  onTag: (tag: string | null) => void;
+  counts: Record<Tab, number>;
 }) {
   const kinds: { value: Tab; label: string }[] = [
     { value: "all", label: "All" },
     { value: "tool", label: "Tools" },
     { value: "formula", label: "Formulae" },
   ];
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  function onKeyDown(event: React.KeyboardEvent, i: number) {
+    const last = kinds.length - 1;
+    let next: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown")
+      next = i === last ? 0 : i + 1;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp")
+      next = i === 0 ? last : i - 1;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = last;
+    if (next === null) return;
+    event.preventDefault();
+    onTab(kinds[next]!.value);
+    refs.current[next]?.focus();
+  }
+
+  return (
+    <div>
+      <h2 id="kind-heading" className="text-label text-muted font-medium">
+        Kind
+      </h2>
+      <div
+        role="tablist"
+        aria-labelledby="kind-heading"
+        className="mt-1.5 flex flex-wrap gap-1"
+      >
+        {kinds.map(({ value, label }, i) => {
+          const on = tab === value;
+          return (
+            <button
+              key={value}
+              ref={(el) => {
+                refs.current[i] = el;
+              }}
+              type="button"
+              role="tab"
+              id={`kind-tab-${value}`}
+              aria-selected={on}
+              aria-controls="kind-panel"
+              tabIndex={on ? 0 : -1}
+              onClick={() => onTab(value)}
+              onKeyDown={(e) => onKeyDown(e, i)}
+              className={`${segment} inline-flex items-center gap-1.5 ${
+                on ? "bg-accent text-bg" : segmentOff
+              }`}
+            >
+              {/* Reserved slot: invisible keeps the tab's width constant between
+                  states, so activating one never shifts the others. */}
+              <span aria-hidden="true" className={on ? "" : "invisible"}>
+                ✓
+              </span>
+              <span>{label}</span>
+              <span className={`tabular-nums ${on ? "text-bg" : "text-muted"}`}>
+                {counts[value]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// The card-catalog drawer: tags as one quiet filter list. A vertical rail on
+// desktop (where it earns the width a stretched search box couldn't); above the
+// list, wrapping into chips, on narrow screens. Accent + ✓ marks the one active
+// filter — never color alone, never more than a sliver of the screen. Renders
+// nothing until a tag exists, so an untagged stash reclaims the column.
+function FilterRail({
+  tags,
+  tagCounts,
+  activeTag,
+  onTag,
+}: {
+  tags: string[];
+  tagCounts: Map<string, number>;
+  activeTag: string | null;
+  onTag: (tag: string | null) => void;
+}) {
+  if (tags.length === 0) return null;
 
   return (
     <aside className="lg:w-52 lg:shrink-0">
       {/* ponytail: sticky pins the rail; a tag list taller than the viewport
           just scrolls with the page. Add internal overflow only if a stash ever
           grows hundreds of tags. */}
-      {/* Quiet sans section labels — the app's voice naming the two axes. Not
-          the tracked-uppercase eyebrow the bans forbid: a filter rail with a
-          Kind and a Tags group is standard product furniture, so they stay
-          sentence-case and muted, and label their group via aria-labelledby. */}
-      <nav className="flex flex-col gap-5 lg:sticky lg:top-10 lg:gap-6">
-        <div>
-          <h2 id="rail-kind" className={railHeading}>
-            Kind
-          </h2>
-          <div
-            role="group"
-            aria-labelledby="rail-kind"
-            className="mt-1.5 flex flex-wrap gap-1 lg:flex-col lg:gap-0.5"
-          >
-            {kinds.map(({ value, label }) => (
+      {/* Quiet sans section label — the app's voice naming the axis. Not the
+          tracked-uppercase eyebrow the bans forbid: a filter rail with a Tags
+          group is standard product furniture, so it stays sentence-case and
+          muted, and labels its group via aria-labelledby. */}
+      <nav className="lg:sticky lg:top-10">
+        <h2 id="rail-tags" className={railHeading}>
+          Tags
+        </h2>
+        <div
+          role="group"
+          aria-labelledby="rail-tags"
+          className="mt-1.5 flex flex-wrap gap-1 lg:flex-col lg:gap-0.5"
+        >
+          {tags.map((tag) => {
+            const on = activeTag === tag;
+            return (
               <FilterRow
-                key={value}
-                label={label}
-                count={kindCounts[value]}
-                active={tab === value}
-                onClick={() => onTab(value)}
+                key={tag}
+                label={tag}
+                count={tagCounts.get(tag) ?? 0}
+                active={on}
+                onClick={() => onTag(on ? null : tag)}
               />
-            ))}
-          </div>
+            );
+          })}
         </div>
-
-        {tags.length > 0 && (
-          <div>
-            <h2 id="rail-tags" className={railHeading}>
-              Tags
-            </h2>
-            <div
-              role="group"
-              aria-labelledby="rail-tags"
-              className="mt-1.5 flex flex-wrap gap-1 lg:flex-col lg:gap-0.5"
-            >
-              {tags.map((tag) => {
-                const on = activeTag === tag;
-                return (
-                  <FilterRow
-                    key={tag}
-                    label={tag}
-                    count={tagCounts.get(tag) ?? 0}
-                    active={on}
-                    onClick={() => onTag(on ? null : tag)}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        )}
       </nav>
     </aside>
   );
