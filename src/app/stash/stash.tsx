@@ -10,11 +10,13 @@ import {
   useSyncExternalStore,
   useTransition,
 } from "react";
+import { useFormStatus } from "react-dom";
 
 import { text } from "~/form";
 import { authClient } from "~/server/better-auth/client";
 import type { items } from "~/server/db/schema";
 
+import { GitHubMark, REPO_URL } from "../github-mark";
 import { ThemeToggle } from "../theme-toggle";
 
 import { createItem, deleteItem, updateItem } from "./actions";
@@ -87,12 +89,16 @@ function formDataOf(item: Item): FormData {
 const focusRing =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const field = `w-full rounded border border-border bg-bg px-3 py-2 text-body text-ink placeholder:text-muted ${focusRing}`;
+// Search is the product's core act ("re-finding is the product"), so it reads a
+// step larger than the composer fields — the one input that leads. pr-10 keeps a
+// gutter for the idle `/` hint (and the native search-clear once you type).
+const search = `w-full rounded border border-border bg-bg py-2.5 pr-10 pl-3 text-title text-ink placeholder:text-muted ${focusRing}`;
 
 // One selected treatment for every segmented control (kind tabs, composer
-// tool/formula toggle): accent fill plus a ✓ so the state never rides on color
-// alone. The tag chips share the same accent+✓ vocabulary in pill form.
+// tool/formula toggle): accent fill (`bg-accent text-bg`) plus a reserved ✓ slot
+// so the state never rides on color alone and selection never reflows the pair.
+// The tag chips share the same accent+✓ vocabulary in pill form.
 const segment = `rounded px-2.5 py-1 text-label transition-colors duration-150 ${focusRing}`;
-const segmentOn = "bg-accent font-semibold text-bg";
 const segmentOff = "text-muted hover:text-ink";
 
 // Sidebar section label. Left padding matches the filter rows' so the heading
@@ -123,7 +129,7 @@ export function Stash({
 }) {
   const router = useRouter();
   const [list, patch] = useOptimistic(initial, reduce);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
 
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("all");
@@ -325,34 +331,47 @@ export function Stash({
   }
 
   return (
-    <div className="mx-auto max-w-none px-4 py-10 sm:px-6">
-      <header className="flex flex-col gap-5">
-        <div className="flex items-baseline justify-between gap-4">
-          <h1 className="text-headline text-ink font-serif">Stash</h1>
-          <div className="flex items-center gap-3">
-            <span className="text-label text-muted">{name}</span>
-            <button
-              type="button"
-              onClick={() =>
-                startTransition(async () => {
-                  await authClient.signOut();
-                  router.push("/login");
-                  router.refresh();
-                })
-              }
-              className={`text-label text-muted hover:text-ink ${focusRing}`}
-            >
-              Sign out
-            </button>
-            <ThemeToggle />
-          </div>
+    <div className="mx-auto max-w-[85rem] px-4 py-10 sm:px-6">
+      <header className="flex items-center justify-between gap-4">
+        <h1 className="text-display text-ink shrink-0 font-serif leading-none">
+          Stash
+        </h1>
+        <div className="flex min-w-0 items-center gap-3">
+          {/* Identity caption yields first on narrow screens: it truncates so a
+              long name never crushes the wordmark or pushes the toggle off. */}
+          <span className="text-label text-muted min-w-0 truncate">{name}</span>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() =>
+              startTransition(async () => {
+                await authClient.signOut();
+                router.push("/login");
+                router.refresh();
+              })
+            }
+            className={`text-label text-muted hover:text-ink shrink-0 disabled:pointer-events-none disabled:opacity-50 ${focusRing}`}
+          >
+            Sign out
+          </button>
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="GitHub repository (opens in a new tab)"
+            className={`grid h-9 w-9 shrink-0 place-items-center rounded text-muted transition-colors duration-150 hover:text-ink ${focusRing}`}
+          >
+            <GitHubMark className="size-[18px]" />
+          </a>
+          <ThemeToggle />
         </div>
-
-        <KindTabs tab={tab} onTab={setTab} counts={kindCounts} />
       </header>
 
       <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:gap-10">
         <FilterRail
+          tab={tab}
+          onTab={setTab}
+          kindCounts={kindCounts}
           tags={railTags}
           tagCounts={tagCounts}
           activeTag={activeTag}
@@ -360,15 +379,27 @@ export function Stash({
         />
 
         <main className="min-w-0 flex-1">
-          <input
-            ref={searchRef}
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search titles, descriptions, commands, tags…"
-            aria-label="Search your stash"
-            className={field}
-          />
+          <div className="relative">
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search titles, descriptions, commands, tags…"
+              aria-label="Search your stash"
+              className={search}
+            />
+            {/* Idle-only shortcut hint. Hidden once you type (native clear takes
+                the gutter) and on touch, where there's no `/` to press. */}
+            {!query && (
+              <kbd
+                aria-hidden="true"
+                className="border-border text-label text-muted pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded border px-1.5 py-0.5 sm:block"
+              >
+                /
+              </kbd>
+            )}
+          </div>
 
           <Composer
             open={composerOpen}
@@ -467,7 +498,7 @@ export function Stash({
           role="alert"
           className="border-border bg-surface fixed inset-x-4 bottom-4 mx-auto flex max-w-sm items-center justify-between gap-4 rounded border px-4 py-3 shadow-lg"
         >
-          <span className="text-label text-ink">
+          <span className="text-label text-danger">
             <span aria-hidden="true">✕ </span>
             {error}
           </span>
@@ -501,22 +532,24 @@ export function Stash({
   );
 }
 
-// The kind switch, lifted into the hero: All / Tools / Formulae as one
-// horizontal control that swaps the list view. A real ARIA tablist — roving
-// tabindex, ←/→ (and ↑/↓) move and activate, selection follows focus — driving
-// the `kind-panel` results region. Carries a visible "Kind" heading so it has
-// the same axis label and heading-nav discoverability as the sidebar's Tags.
-// Selected treatment is accent fill + a ✓ (state is never color alone); the ✓
-// slot is reserved on every tab and the active tab doesn't change weight, so
-// selection never reflows its neighbors.
+// The kind switch, top of the filter rail: All / Tools / Formulae as the fixed
+// facet above the open-ended Tags. A real ARIA tablist — roving tabindex, ↑/↓
+// (and ←/→) move and activate, selection follows focus — driving the
+// `kind-panel` results region. Named by the rail's "Kind" heading (`labelledBy`)
+// for parity with Tags. Shares the rail's shape: an inline pill on mobile, a
+// full-width row with a right-aligned count on desktop. Selected treatment is
+// accent fill + a reserved ✓ slot (state never rides on color alone, and the
+// active tab never changes width, so selection can't reflow its neighbors).
 function KindTabs({
   tab,
   onTab,
   counts,
+  labelledBy,
 }: {
   tab: Tab;
   onTab: (tab: Tab) => void;
   counts: Record<Tab, number>;
+  labelledBy: string;
 }) {
   const kinds: { value: Tab; label: string }[] = [
     { value: "all", label: "All" },
@@ -541,109 +574,128 @@ function KindTabs({
   }
 
   return (
-    <div>
-      <h2 id="kind-heading" className="text-label text-muted font-medium">
-        Kind
-      </h2>
-      <div
-        role="tablist"
-        aria-labelledby="kind-heading"
-        className="mt-1.5 flex flex-wrap gap-1"
-      >
-        {kinds.map(({ value, label }, i) => {
-          const on = tab === value;
-          return (
-            <button
-              key={value}
-              ref={(el) => {
-                refs.current[i] = el;
-              }}
-              type="button"
-              role="tab"
-              id={`kind-tab-${value}`}
-              aria-selected={on}
-              aria-controls="kind-panel"
-              tabIndex={on ? 0 : -1}
-              onClick={() => onTab(value)}
-              onKeyDown={(e) => onKeyDown(e, i)}
-              className={`${segment} inline-flex items-center gap-1.5 ${
-                on ? "bg-accent text-bg" : segmentOff
-              }`}
-            >
+    <div
+      role="tablist"
+      aria-labelledby={labelledBy}
+      className="mt-1.5 flex flex-wrap gap-1 lg:flex-col lg:gap-0.5"
+    >
+      {kinds.map(({ value, label }, i) => {
+        const on = tab === value;
+        return (
+          <button
+            key={value}
+            ref={(el) => {
+              refs.current[i] = el;
+            }}
+            type="button"
+            role="tab"
+            id={`kind-tab-${value}`}
+            aria-selected={on}
+            aria-controls="kind-panel"
+            tabIndex={on ? 0 : -1}
+            onClick={() => onTab(value)}
+            onKeyDown={(e) => onKeyDown(e, i)}
+            className={`${segment} flex items-center gap-1.5 lg:w-full lg:justify-between lg:px-2 lg:py-1.5 ${
+              on ? "bg-accent text-bg" : segmentOff
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
               {/* Reserved slot: invisible keeps the tab's width constant between
                   states, so activating one never shifts the others. */}
               <span aria-hidden="true" className={on ? "" : "invisible"}>
                 ✓
               </span>
               <span>{label}</span>
-              <span className={`tabular-nums ${on ? "text-bg" : "text-muted"}`}>
-                {counts[value]}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+            </span>
+            <span
+              className={`shrink-0 tabular-nums ${on ? "text-bg" : "text-muted"}`}
+            >
+              {counts[value]}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-// The card-catalog drawer: tags as one quiet filter list. A vertical rail on
-// desktop (where it earns the width a stretched search box couldn't); above the
-// list, wrapping into chips, on narrow screens. Accent + ✓ marks the one active
-// filter — never color alone, never more than a sliver of the screen. Renders
-// nothing until a tag exists, so an untagged stash reclaims the column.
+// The card-catalog drawer: the two filter axes as one quiet rail. A vertical
+// column on desktop (where it earns the width a stretched search box couldn't);
+// above the list, wrapping into chips, on narrow screens. Kind is the fixed
+// facet on top; Tags, the open-ended one, follows and only appears once a tag
+// exists. Accent + ✓ marks the active filter — never color alone, never more
+// than a sliver of the screen. The quiet sans headings are the app's voice
+// naming each axis: sentence-case and muted, not the tracked-uppercase eyebrow
+// the bans forbid, and each labels its group via aria-labelledby.
 function FilterRail({
+  tab,
+  onTab,
+  kindCounts,
   tags,
   tagCounts,
   activeTag,
   onTag,
 }: {
+  tab: Tab;
+  onTab: (tab: Tab) => void;
+  kindCounts: Record<Tab, number>;
   tags: string[];
   tagCounts: Map<string, number>;
   activeTag: string | null;
   onTag: (tag: string | null) => void;
 }) {
-  if (tags.length === 0) return null;
-
   return (
     <aside className="lg:w-52 lg:shrink-0">
-      {/* ponytail: sticky pins the rail; a tag list taller than the viewport
-          just scrolls with the page. Add internal overflow only if a stash ever
-          grows hundreds of tags. */}
-      {/* Quiet sans section label — the app's voice naming the axis. Not the
-          tracked-uppercase eyebrow the bans forbid: a filter rail with a Tags
-          group is standard product furniture, so it stays sentence-case and
-          muted, and labels its group via aria-labelledby. */}
-      <nav className="lg:sticky lg:top-10">
-        <h2 id="rail-tags" className={railHeading}>
-          Tags
-        </h2>
-        <div
-          role="group"
-          aria-labelledby="rail-tags"
-          className="mt-1.5 flex flex-wrap gap-1 lg:flex-col lg:gap-0.5"
-        >
-          {tags.map((tag) => {
-            const on = activeTag === tag;
-            return (
-              <FilterRow
-                key={tag}
-                label={tag}
-                count={tagCounts.get(tag) ?? 0}
-                active={on}
-                onClick={() => onTag(on ? null : tag)}
-              />
-            );
-          })}
+      {/* ponytail: sticky pins the rail; a list taller than the viewport just
+          scrolls with the page. Add internal overflow only if a stash ever grows
+          hundreds of tags. */}
+      <nav className="flex flex-col gap-6 lg:sticky lg:top-10">
+        <div>
+          <h2 id="rail-kind" className={railHeading}>
+            Kind
+          </h2>
+          <KindTabs
+            tab={tab}
+            onTab={onTab}
+            counts={kindCounts}
+            labelledBy="rail-kind"
+          />
         </div>
+
+        {tags.length > 0 && (
+          <div>
+            <h2 id="rail-tags" className={railHeading}>
+              Tags
+            </h2>
+            <div
+              role="group"
+              aria-labelledby="rail-tags"
+              className="mt-1.5 flex flex-wrap gap-1 lg:flex-col lg:gap-0.5"
+            >
+              {tags.map((tag) => {
+                const on = activeTag === tag;
+                return (
+                  <FilterRow
+                    key={tag}
+                    label={tag}
+                    count={tagCounts.get(tag) ?? 0}
+                    active={on}
+                    onClick={() => onTag(on ? null : tag)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
       </nav>
     </aside>
   );
 }
 
-// One filter atom for both sections: an inline pill on mobile, a full-width row
-// with a right-aligned count on desktop. The count is metadata, so it stays
-// muted even when the label lights up.
+// One filter atom for both rail sections: an inline pill on mobile, a full-width
+// row with a right-aligned count on desktop. Shares KindTabs' treatment — accent
+// fill plus a reserved ✓ slot, no weight change — so every row in the rail lines
+// up on one left edge and activating never reflows a neighbor.
 function FilterRow({
   label,
   count,
@@ -660,14 +712,16 @@ function FilterRow({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`text-label flex items-center gap-2 rounded px-2.5 py-1 transition-colors duration-150 lg:w-full lg:justify-between lg:px-2 lg:py-1.5 ${focusRing} ${
+      className={`text-label flex items-center gap-1.5 rounded px-2.5 py-1 transition-colors duration-150 lg:w-full lg:justify-between lg:px-2 lg:py-1.5 ${focusRing} ${
         active
-          ? "bg-accent text-bg font-semibold"
+          ? "bg-accent text-bg"
           : "text-muted hover:bg-surface hover:text-ink"
       }`}
     >
-      <span className="flex min-w-0 items-center gap-1">
-        {active && <span aria-hidden="true">✓</span>}
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span aria-hidden="true" className={active ? "" : "invisible"}>
+          ✓
+        </span>
         <span className="truncate">{label}</span>
       </span>
       <span
@@ -741,10 +795,19 @@ function Composer({
             type="button"
             aria-pressed={kind === value}
             onClick={() => setKind(value)}
-            className={`${segment} ${kind === value ? segmentOn : segmentOff}`}
+            className={`${segment} inline-flex items-center gap-1.5 ${
+              kind === value ? "bg-accent text-bg" : segmentOff
+            }`}
           >
-            {kind === value && <span aria-hidden="true">✓ </span>}
-            {value === "tool" ? "Tool" : "Formula"}
+            {/* Reserved ✓ slot, no weight change — same treatment as KindTabs, so
+                switching tool↔formula never reflows the pair. */}
+            <span
+              aria-hidden="true"
+              className={kind === value ? "" : "invisible"}
+            >
+              ✓
+            </span>
+            <span>{value === "tool" ? "Tool" : "Formula"}</span>
           </button>
         ))}
       </div>
@@ -801,19 +864,14 @@ function Composer({
       />
 
       {error && (
-        <p role="alert" className="text-label text-ink">
+        <p role="alert" className="text-label text-danger">
           <span aria-hidden="true">✕ </span>
           {error}
         </p>
       )}
 
       <div className="flex items-center gap-2">
-        <button
-          type="submit"
-          className={`bg-accent text-body text-bg rounded px-4 py-2 transition-opacity duration-150 hover:opacity-90 ${focusRing}`}
-        >
-          {editing ? "Save changes" : "Save"}
-        </button>
+        <SubmitButton editing={editing} />
         <button
           type="button"
           onClick={onCancel}
@@ -824,6 +882,22 @@ function Composer({
         <span className="text-label text-muted ml-auto">Esc to close</span>
       </div>
     </form>
+  );
+}
+
+// Reads the parent form's submission state so a double-click or Enter-mash can't
+// fire two createItem/updateItem calls (the server rate-limits but doesn't
+// dedupe). Doubles as the save's busy state — "Saving…" while the action runs.
+function SubmitButton({ editing }: { editing: Item | null }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className={`bg-accent text-body text-bg rounded px-4 py-2 transition-opacity duration-150 hover:opacity-90 disabled:opacity-60 disabled:hover:opacity-60 ${focusRing}`}
+    >
+      {pending ? "Saving…" : editing ? "Save changes" : "Save"}
+    </button>
   );
 }
 
@@ -981,7 +1055,7 @@ function Row({
           type="button"
           onClick={onDelete}
           aria-label={`Delete ${item.title}`}
-          className={`text-label text-muted hover:text-ink rounded px-2 py-1 ${focusRing}`}
+          className={`text-label text-muted hover:text-danger rounded px-2 py-1 ${focusRing}`}
         >
           Delete
         </button>
@@ -1067,12 +1141,11 @@ function DetailPane({
     <aside
       ref={containerRef}
       aria-label="Preview"
-      aria-live="polite"
       className="hidden lg:sticky lg:top-10 lg:flex lg:w-96 lg:shrink-0 lg:flex-col lg:gap-4"
     >
       <PreviewTile item={item} />
 
-      <h2 className="text-headline leading-thai text-ink font-serif text-balance">
+      <h2 className="text-display leading-thai text-ink font-serif text-balance">
         {item.title}
       </h2>
 
@@ -1119,7 +1192,7 @@ function DetailPane({
           type="button"
           onClick={onDelete}
           aria-label={`Delete ${item.title}`}
-          className={`text-label text-muted hover:text-ink rounded px-2 py-1 ${focusRing}`}
+          className={`text-label text-muted hover:text-danger rounded px-2 py-1 ${focusRing}`}
         >
           Delete
         </button>
@@ -1198,9 +1271,16 @@ function CommandBlock({ cmd }: { cmd: string }) {
         type="button"
         onClick={copy}
         aria-label={`Copy command: ${cmd}`}
-        className={`text-label text-muted hover:text-ink shrink-0 rounded px-1.5 py-0.5 ${focusRing}`}
+        className={`text-label shrink-0 rounded px-1.5 py-0.5 ${focusRing} ${
+          state === "copied"
+            ? "text-accent"
+            : state === "failed"
+              ? "text-danger"
+              : "text-muted hover:text-ink"
+        }`}
       >
-        {/* Never color alone: the state is a word and a mark, not a green flash. */}
+        {/* The color reinforces a word+mark — teal confirm, danger fail — so the
+            state never rides on color alone. */}
         {state === "copied"
           ? "✓ Copied"
           : state === "failed"
@@ -1267,9 +1347,11 @@ function Empty({
   );
 }
 
-// The one label that separates the two kinds in the "All" view. Sentence-case
-// muted sans with a count — the same quiet voice as the rail's "Kind"/"Tags"
-// headings, deliberately not the tracked-uppercase eyebrow the bans forbid.
+// The label that separates the two kinds in the "All" view. Ink and semibold —
+// a content-structure beat that deliberately carries more weight than the muted
+// filter-furniture (the rail's "Kind"/"Tags" headings), so the list reads as
+// grouped at a glance. Still sentence-case sans, not the banned eyebrow. The
+// count stays muted so the name leads.
 function SectionHeading({
   count,
   children,
@@ -1279,15 +1361,16 @@ function SectionHeading({
 }) {
   return (
     <div className="border-border mb-4 flex items-baseline gap-2 border-b pb-2">
-      <h2 className="text-label text-muted font-medium">{children}</h2>
+      <h2 className="text-label text-ink font-semibold">{children}</h2>
       <span className="text-label text-muted tabular-nums">{count}</span>
     </div>
   );
 }
 
-// Clipboard write with a two-second, word-plus-mark confirmation (never a bare
-// green flash — state never rides on color alone). Themeable via className so it
-// reads on both the light command box and the dark terminal card.
+// Clipboard write with a two-second, word-plus-mark confirmation. The color
+// reinforces the mark — term-accent teal on success, danger-rose on failure —
+// so state never rides on color alone. Terminal-only: it owns its term-* tones
+// and the caller passes layout/focus classes. `className` stays free of color.
 function CopyButton({ text, className }: { text: string; className: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
@@ -1303,12 +1386,19 @@ function CopyButton({ text, className }: { text: string; className: string }) {
     setTimeout(() => setState("idle"), 2000);
   }
 
+  const tone =
+    state === "copied"
+      ? "text-term-accent"
+      : state === "failed"
+        ? "text-term-danger"
+        : "text-term-muted hover:text-term-ink";
+
   return (
     <button
       type="button"
       onClick={copy}
       aria-label={`Copy command: ${text}`}
-      className={className}
+      className={`${tone} ${className}`}
     >
       {state === "copied"
         ? "✓ Copied"
@@ -1361,7 +1451,7 @@ function FormulaCard({
             type="button"
             onClick={onDelete}
             aria-label={`Delete ${item.title}`}
-            className="text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent rounded px-2 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="text-label text-term-muted hover:text-term-danger focus-visible:outline-term-accent rounded px-2 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             Delete
           </button>
@@ -1381,7 +1471,7 @@ function FormulaCard({
           </code>
           <CopyButton
             text={item.cmd ?? ""}
-            className="text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent shrink-0 rounded px-1.5 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="text-label focus-visible:outline-term-accent shrink-0 rounded px-1.5 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
           />
         </div>
 
