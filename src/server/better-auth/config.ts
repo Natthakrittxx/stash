@@ -9,8 +9,19 @@ export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
   }),
-  emailAndPassword: {
-    enabled: true,
+  emailAndPassword: { enabled: true },
+  socialProviders: {
+    google: {
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
+    },
+  },
+  account: {
+    accountLinking: {
+      enabled: true,
+      // Google verifies emails, so linking to a same-email account is safe.
+      trustedProviders: ["google"],
+    },
   },
 });
 

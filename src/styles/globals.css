@@ -8,6 +8,11 @@
   --color-ink: #14181a; /* 17:1 on bg */
   --color-muted: #5a6462; /* 5.5:1 on bg */
   --color-accent: #005f66; /* 7.0:1 on bg — enamel, not sage */
+  /* The one semantic hue beyond the accent: destructive + error state. A cool
+     wine-red (not orange) so it belongs beside the teal. Always paired with a
+     ✕ glyph or the word "Delete" — never carries meaning on color alone.
+     6.0:1 on bg, 5.4:1 on surface. */
+  --color-danger: #b02a37;
 
   /* Terminal surface for formula cards. Fixed dark in both themes — a command
      lives in a console, so its card is always a dark console. These are the
@@ -19,6 +24,7 @@
   --color-term-ink: #e9eeed;
   --color-term-muted: #9ba9a7;
   --color-term-accent: #4bc3cc;
+  --color-term-danger: #f0a0a8; /* 8.2:1 on term-surface — pinned like the rest */
 
   /* Three voices. Latin serif first, Thai serif behind it: a Thai title has no
      Latin serif to fall back on and would otherwise land in a system sans,
@@ -65,6 +71,7 @@
     --color-ink: #e9eeed; /* 15.9:1 on bg */
     --color-muted: #9ba9a7; /* 7.6:1 on bg */
     --color-accent: #4bc3cc; /* 8.8:1 on bg; dark text on fill 8.8:1 */
+    --color-danger: #f0a0a8; /* 9.1:1 on bg — lifts to rose on the dark ground */
   }
 }
 
@@ -76,6 +83,7 @@
   --color-ink: #e9eeed;
   --color-muted: #9ba9a7;
   --color-accent: #4bc3cc;
+  --color-danger: #f0a0a8;
 }
 
 html {
@@ -111,4 +119,78 @@ html {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }
+}
+
+/* The landing hero commits to the dark "archive after hours" art direction no
+   matter the app theme: scope the dark token values to the subtree so every
+   color utility inside (bg, text, border) resolves dark. A brand-register
+   liberty the product surfaces don't take. */
+.landing-dark {
+  color-scheme: dark;
+  --color-bg: #0e1413;
+  --color-surface: #172020;
+  --color-border: #33413f;
+  --color-ink: #e9eeed;
+  --color-muted: #9ba9a7;
+  --color-accent: #4bc3cc;
+  --color-danger: #f0a0a8;
+}
+
+/* Orchestrated first-load reveal for the landing. Each reveal fits what it
+   reveals rather than one uniform fade-rise on everything: text rises, the hero
+   headline softens in from blur, the catalog card "files in" from the side and
+   its glow blooms once it lands. All are CSS animations (not JS-class-gated
+   transitions) so they never ship blank on a headless render — the element's
+   natural state is visible and the keyframe only adds the entrance. The global
+   reduced-motion rule above snaps every one of them instant. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+.rise {
+  animation: rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Hero headline: a softened, decisive entrance. */
+@keyframes rise-blur {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(10px);
+  }
+}
+
+.rise-blur {
+  animation: rise-blur 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* The card is set down into place — the namesake filing action. Slides in from
+   the right and settles; the resting -1deg tilt lives on the inner element so
+   it survives this transform. */
+@keyframes file-in {
+  from {
+    opacity: 0;
+    transform: translateX(30px) scale(0.97);
+  }
+}
+
+.file-in {
+  animation: file-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Enamel glows in the dim archive — but only after the card has landed. */
+@keyframes glow-bloom {
+  from {
+    box-shadow: 0 24px 80px -24px rgba(75, 195, 204, 0);
+  }
+  to {
+    box-shadow: 0 24px 80px -24px rgba(75, 195, 204, 0.45);
+  }
+}
+
+.glow-bloom {
+  animation: glow-bloom 0.6s ease-out 0.9s both;
 }

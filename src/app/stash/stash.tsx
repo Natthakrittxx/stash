@@ -331,7 +331,7 @@ export function Stash({
   }
 
   return (
-    <div className="mx-auto max-w-[85rem] px-4 py-10 sm:px-6">
+    <div className="px-4 py-10 sm:px-6">
       <header className="flex items-center justify-between gap-4">
         <h1 className="text-display text-ink shrink-0 font-serif leading-none">
           Stash

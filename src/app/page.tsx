@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 
+import { Landing } from "~/app/landing";
 import { getSession } from "~/server/better-auth/server";
 
-// No marketing surface. `/` is a fork, not a page.
+// Logged-in users fork straight to their stash; everyone else meets the landing.
 export default async function Home() {
-  redirect((await getSession()) ? "/stash" : "/login");
+  if (await getSession()) redirect("/stash");
+  return <Landing />;
 }

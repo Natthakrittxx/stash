@@ -9,7 +9,7 @@ import { text } from "~/form";
 import { getSession } from "~/server/better-auth/server";
 import { db } from "~/server/db";
 import { items } from "~/server/db/schema";
-import { fetchOgImage } from "~/server/og";
+import { fetchPreview } from "~/server/og";
 import { normalizeUrl } from "~/server/url";
 
 const ITEMS_PER_HOUR = 60;
@@ -83,9 +83,9 @@ function toRow(data: z.infer<typeof itemSchema>) {
 }
 
 // Resolve the preview after the response flushes — capture stays instant and the
-// image lands on the next load of /stash. A formula has no page, and a failed or
-// image-less fetch leaves the row on its monogram, so nothing here can block a
-// save or surface an error.
+// image/description land on the next load of /stash. A formula has no page, and a
+// failed fetch leaves the row on its monogram, so nothing here can block a save
+// or surface an error.
 function resolvePreview(
   id: string,
   userId: string,
@@ -93,12 +93,17 @@ function resolvePreview(
 ) {
   if (row.kind !== "tool" || !row.url) return;
   const url = row.url;
+  // Only backfill a description the user left blank — never clobber their words.
+  const wantsDescription = row.description.length === 0;
   after(async () => {
-    const image = await fetchOgImage(url);
-    if (!image) return;
+    const { image, description } = await fetchPreview(url);
+    const patch: { image?: string; description?: string } = {};
+    if (image) patch.image = image;
+    if (wantsDescription && description) patch.description = description;
+    if (Object.keys(patch).length === 0) return;
     await db
       .update(items)
-      .set({ image })
+      .set(patch)
       .where(and(eq(items.id, id), eq(items.userId, userId)));
     revalidatePath("/stash");
   });
