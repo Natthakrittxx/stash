@@ -17,8 +17,8 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
     setError(null);
     setPending(true);
 
-    const email = String(formData.get("email"));
-    const password = String(formData.get("password"));
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
     // A name is required at signup; derive it from the email so the form stays
     // to two fields. Editable later if display names ever matter.
     const { error } = isSignup
