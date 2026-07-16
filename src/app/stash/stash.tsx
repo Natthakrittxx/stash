@@ -436,7 +436,9 @@ export function Stash({
                         Tools
                       </SectionHeading>
                     )}
-                    <ul className="divide-border border-border divide-y border-t">
+                    <ul
+                      className={`divide-border border-border divide-y ${tab === "all" ? "" : "border-t"}`}
+                    >
                       {tools.map((item) => (
                         <Row
                           key={item.id}
@@ -1066,12 +1068,13 @@ function Row({
 
 // A landscape 112×64 leading tile on every row keeps the title column aligned —
 // the mistake the first preview attempt made was giving tools a thumbnail and
-// formulas none. Sized to the og:image's ~1.9:1 aspect: a square crop reduced
-// the preview to an unreadable center sliver, so a page was no longer
-// recognizable at a glance. Tool: og:image, falling back to a host-letter
-// monogram. Formula: a terminal glyph, since a command has no page to show.
-// Decorative throughout — the title carries the meaning, so the tile is
-// aria-hidden.
+// formulas none. Framed at the og:image's ~1.9:1 aspect (the 1200×630 spec
+// default), so a real share image fills it. But og:images vary — square logos,
+// portraits — so the image is object-contain, not cover: an odd ratio letterboxes
+// on the tile bg and stays whole, instead of cropping to an unrecognizable
+// sliver. Tool: og:image, falling back to a host-letter monogram. Formula: a
+// terminal glyph, since a command has no page to show. Decorative throughout —
+// the title carries the meaning, so the tile is aria-hidden.
 const tileBase =
   "grid h-16 w-28 shrink-0 place-items-center overflow-hidden rounded border border-border bg-surface";
 
@@ -1103,7 +1106,7 @@ function RowTile({ item }: { item: Item }) {
           width={112}
           height={64}
           onError={() => setBroken(true)}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
         />
       </div>
     );
@@ -1141,7 +1144,9 @@ function DetailPane({
     <aside
       ref={containerRef}
       aria-label="Preview"
-      className="hidden lg:sticky lg:top-10 lg:flex lg:w-96 lg:shrink-0 lg:flex-col lg:gap-4"
+      // self-start keeps the aside content-height; without it the flex row
+      // stretches it to the full list height, leaving sticky no room to travel.
+      className="hidden lg:sticky lg:top-10 lg:flex lg:w-96 lg:shrink-0 lg:flex-col lg:gap-4 lg:self-start"
     >
       <PreviewTile item={item} />
 
@@ -1230,7 +1235,7 @@ function PreviewTile({ item }: { item: Item }) {
           aria-hidden="true"
           loading="lazy"
           onError={() => setBroken(true)}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
         />
       </div>
     );
