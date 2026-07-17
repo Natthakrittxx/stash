@@ -14,6 +14,10 @@ import { normalizeUrl } from "~/server/url";
 
 const ITEMS_PER_HOUR = 60;
 
+// The id arrives from the client and goes straight at a uuid column, where a
+// non-uuid string raises 22P02 and surfaces as a 500 rather than an error.
+const idSchema = z.string().uuid();
+
 const urlField = z
   .string()
   .trim()
@@ -159,6 +163,9 @@ export async function updateItem(
 ): Promise<Result> {
   const userId = await requireUserId();
 
+  const target = idSchema.safeParse(id);
+  if (!target.success) return { error: "No such item." };
+
   const parsed = parse(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "That didn't validate." };
@@ -167,20 +174,32 @@ export async function updateItem(
   const row = toRow(parsed.data);
   // Keep a tool's existing preview until the fresh one resolves (no flash on an
   // unrelated edit); clear it when a row becomes a formula, which has no page.
-  await db
+  const updated = await db
     .update(items)
     .set(row.kind === "formula" ? { ...row, image: null } : row)
-    .where(and(eq(items.id, id), eq(items.userId, userId)));
+    .where(and(eq(items.id, target.data), eq(items.userId, userId)))
+    .returning({ id: items.id });
+
+  // A miss means the id was someone else's or nothing at all. Without this gate
+  // the fetch below still ran, so any signed-in account owning no items could
+  // loop this action to make the server fetch arbitrary URLs, at no rate limit —
+  // only createItem counts against ITEMS_PER_HOUR.
+  if (updated.length === 0) return { error: "No such item." };
 
   revalidatePath("/stash");
-  resolvePreview(id, userId, row);
+  resolvePreview(target.data, userId, row);
   return {};
 }
 
 export async function deleteItem(id: string): Promise<Result> {
   const userId = await requireUserId();
 
-  await db.delete(items).where(and(eq(items.id, id), eq(items.userId, userId)));
+  const target = idSchema.safeParse(id);
+  if (!target.success) return { error: "No such item." };
+
+  await db
+    .delete(items)
+    .where(and(eq(items.id, target.data), eq(items.userId, userId)));
 
   revalidatePath("/stash");
   return {};

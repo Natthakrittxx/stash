@@ -5,6 +5,7 @@ import { useState } from "react";
 import { authClient } from "~/server/better-auth/client";
 
 import { GitHubMark, REPO_URL } from "./github-mark";
+import { StashMark } from "./stash-mark";
 
 export function Landing() {
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +50,8 @@ export function Landing() {
       <div className="relative mx-auto grid min-h-dvh max-w-6xl items-center gap-x-16 gap-y-14 px-6 py-16 lg:grid-cols-[1.1fr_1fr]">
         {/* Copy */}
         <div className="min-w-0">
-          <p className="rise text-body font-medium tracking-tight text-accent">
+          <p className="rise flex items-center gap-2 text-body font-medium tracking-tight text-accent">
+            <StashMark className="size-7 rounded-[1.6px]" />
             Stash
           </p>
 

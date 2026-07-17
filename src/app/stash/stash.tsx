@@ -17,6 +17,7 @@ import { authClient } from "~/server/better-auth/client";
 import type { items } from "~/server/db/schema";
 
 import { GitHubMark, REPO_URL } from "../github-mark";
+import { StashMark } from "../stash-mark";
 import { ThemeToggle } from "../theme-toggle";
 
 import { createItem, deleteItem, updateItem } from "./actions";
@@ -333,7 +334,8 @@ export function Stash({
   return (
     <div className="px-4 py-10 sm:px-6">
       <header className="flex items-center justify-between gap-4">
-        <h1 className="text-display text-ink shrink-0 font-serif leading-none">
+        <h1 className="text-display text-ink flex shrink-0 items-center gap-2.5 font-serif leading-none">
+          <StashMark className="size-[1em] rounded-[3px]" />
           Stash
         </h1>
         <div className="flex min-w-0 items-center gap-3">

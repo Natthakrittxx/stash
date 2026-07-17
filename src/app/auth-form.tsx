@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { authClient } from "~/server/better-auth/client";
 
+import { StashMark } from "./stash-mark";
 import { ThemeToggle } from "./theme-toggle";
 
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
@@ -60,7 +61,10 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       <div className="fixed right-4 top-4">
         <ThemeToggle />
       </div>
-      <p className="text-body font-medium tracking-tight text-accent">Stash</p>
+      <p className="flex items-center gap-2 text-body font-medium tracking-tight text-accent">
+        <StashMark className="size-6 rounded-[1.4px]" />
+        Stash
+      </p>
       <h1 className="mt-2 font-serif text-headline text-ink">
         {isSignup ? "Start a stash" : "Open your stash"}
       </h1>

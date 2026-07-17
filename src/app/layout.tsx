@@ -11,10 +11,22 @@ import {
 // Runs before first paint so a stored theme never flashes the OS default.
 const noFlash = `try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}`;
 
+const description =
+  "A quiet, typographic place to save things and find them again.";
+
 export const metadata: Metadata = {
   title: "Stash",
-  description: "A quiet, typographic place to save things and find them again.",
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
+  description,
+  icons: [
+    { rel: "icon", url: "/favicon.ico", sizes: "48x48" },
+    { rel: "icon", url: "/favicon.svg", type: "image/svg+xml" },
+    { rel: "apple-touch-icon", url: "/stash-icon-1024.png" },
+  ],
+  openGraph: {
+    title: "Stash",
+    description,
+    images: ["/preview.png"],
+  },
 };
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
