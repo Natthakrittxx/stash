@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   title: "Stash",
   description,
   icons: [
-    { rel: "icon", url: "/favicon.ico", sizes: "48x48" },
+    // ponytail: SVG-only favicon; add a generated .ico if pre-16.4 Safari matters.
     { rel: "icon", url: "/favicon.svg", type: "image/svg+xml" },
     { rel: "apple-touch-icon", url: "/stash-icon-1024.png" },
   ],
