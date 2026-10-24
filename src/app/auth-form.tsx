@@ -8,36 +8,84 @@ import { authClient } from "~/server/better-auth/client";
 import { StashMark } from "./stash-mark";
 import { ThemeToggle } from "./theme-toggle";
 
-export function AuthForm({ mode }: { mode: "login" | "signup" }) {
-  const [error, setError] = useState<string | null>(null);
+// A name is required at signup; derive it from the email so the form stays to
+// two fields. Editable later if display names ever matter.
+const nameFrom = (email: string) => email.split("@")[0] ?? email;
+
+export function AuthForm({
+  mode,
+  linkFailed = false,
+}: {
+  mode: "login" | "signup";
+  linkFailed?: boolean;
+}) {
+  const [error, setError] = useState<string | null>(
+    linkFailed
+      ? "That link didn't work. It may have expired or been used already."
+      : null,
+  );
+  const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   const isSignup = mode === "signup";
 
   async function onEmail(formData: FormData) {
     setError(null);
+    setNotice(null);
     setPending(true);
 
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
-    // A name is required at signup; derive it from the email so the form stays
-    // to two fields. Editable later if display names ever matter.
+    // callbackURL is where the verification link lands once clicked.
     const { error } = isSignup
       ? await authClient.signUp.email({
           email,
           password,
-          name: email.split("@")[0] ?? email,
+          name: nameFrom(email),
+          callbackURL: "/stash",
         })
-      : await authClient.signIn.email({ email, password });
+      : await authClient.signIn.email({
+          email,
+          password,
+          callbackURL: "/stash",
+        });
 
     if (error) {
       setPending(false);
-      setError(error.message ?? "That didn't work.");
+      // Sign-in mails a fresh verification link before refusing.
+      if (error.code === "EMAIL_NOT_VERIFIED") {
+        setNotice(`Verify your email first. We sent a new link to ${email}.`);
+      } else {
+        setError(error.message ?? "That didn't work.");
+      }
+      return;
+    }
+    if (isSignup) {
+      // No session until the email is verified.
+      setPending(false);
+      setNotice(`Almost there. Open the link we sent to ${email}.`);
       return;
     }
     // Email auth sets the session cookie in place (no provider redirect), so send
     // the browser on ourselves. A full load re-reads the session server-side.
     window.location.assign("/stash");
+  }
+
+  async function onMagicLink(email: string) {
+    setError(null);
+    setNotice(null);
+    setPending(true);
+
+    const { error } = await authClient.signIn.magicLink({
+      email,
+      name: nameFrom(email),
+      callbackURL: "/stash",
+      errorCallbackURL: "/login",
+    });
+
+    setPending(false);
+    if (error) setError(error.message ?? "That didn't work.");
+    else setNotice(`Check ${email} for a login link. It expires in 5 minutes.`);
   }
 
   async function onGoogle() {
@@ -58,41 +106,47 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6 py-12">
-      <div className="fixed right-4 top-4">
+      <div className="fixed top-4 right-4">
         <ThemeToggle />
       </div>
-      <p className="flex items-center gap-2 text-body font-medium tracking-tight text-accent">
+      <p className="text-body text-accent flex items-center gap-2 font-medium tracking-tight">
         <StashMark className="size-6 rounded-[1.4px]" />
         Stash
       </p>
-      <h1 className="mt-2 font-serif text-headline text-ink">
+      <h1 className="text-headline text-ink mt-2 font-serif">
         {isSignup ? "Start a stash" : "Open your stash"}
       </h1>
-      <p className="mt-1 text-body text-muted">
+      <p className="text-body text-muted mt-1">
         {isSignup
           ? "A quiet place to save things and find them again."
           : "Welcome back."}
       </p>
 
       {error && (
-        <p role="alert" className="mt-6 text-label text-danger">
+        <p role="alert" className="text-label text-danger mt-6">
           <span aria-hidden="true">✕ </span>
           {error}
         </p>
       )}
+      {notice && (
+        <p role="status" className="text-label text-accent mt-6">
+          <span aria-hidden="true">✓ </span>
+          {notice}
+        </p>
+      )}
 
       <form action={onEmail} className="mt-8 flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-label text-muted">
+        <label className="text-label text-muted flex flex-col gap-1">
           Email
           <input
             name="email"
             type="email"
             required
             autoComplete="email"
-            className="rounded border border-border bg-bg px-3 py-2 text-body text-ink transition-colors duration-150 focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="border-border bg-bg text-body text-ink focus-visible:border-accent focus-visible:outline-accent rounded border px-3 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
           />
         </label>
-        <label className="flex flex-col gap-1 text-label text-muted">
+        <label className="text-label text-muted flex flex-col gap-1">
           Password
           <input
             name="password"
@@ -100,20 +154,35 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
             required
             minLength={8}
             autoComplete={isSignup ? "new-password" : "current-password"}
-            className="rounded border border-border bg-bg px-3 py-2 text-body text-ink transition-colors duration-150 focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="border-border bg-bg text-body text-ink focus-visible:border-accent focus-visible:outline-accent rounded border px-3 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
           />
         </label>
         <button
           type="submit"
           disabled={pending}
           aria-busy={pending}
-          className="rounded bg-accent px-4 py-2 text-body font-medium text-bg transition-opacity duration-150 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-60"
+          className="bg-accent text-body text-bg focus-visible:outline-accent rounded px-4 py-2 font-medium transition-opacity duration-150 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60"
         >
           {pending ? "One moment…" : isSignup ? "Create account" : "Log in"}
         </button>
+        <button
+          type="button"
+          disabled={pending}
+          aria-busy={pending}
+          onClick={(e) => {
+            // Check only the email field; submitting would demand a password.
+            const input = e.currentTarget.form?.elements.namedItem("email");
+            if (input instanceof HTMLInputElement && input.reportValidity()) {
+              void onMagicLink(input.value);
+            }
+          }}
+          className="border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60"
+        >
+          {pending ? "One moment…" : "Email me a link instead"}
+        </button>
       </form>
 
-      <p className="mt-4 text-label text-muted">
+      <p className="text-label text-muted mt-4">
         {isSignup ? "Already have a stash? " : "Need a stash? "}
         <Link
           href={isSignup ? "/login" : "/signup"}
@@ -123,10 +192,10 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         </Link>
       </p>
 
-      <div className="mt-6 flex items-center gap-3 text-label text-muted">
-        <span className="h-px flex-1 bg-border" />
+      <div className="text-label text-muted mt-6 flex items-center gap-3">
+        <span className="bg-border h-px flex-1" />
         or
-        <span className="h-px flex-1 bg-border" />
+        <span className="bg-border h-px flex-1" />
       </div>
 
       <button
@@ -134,7 +203,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         onClick={onGoogle}
         disabled={pending}
         aria-busy={pending}
-        className="mt-6 flex items-center justify-center gap-2 rounded border border-border bg-bg px-4 py-2 text-body text-ink transition-colors duration-150 hover:border-accent hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-60"
+        className="border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent mt-6 flex items-center justify-center gap-2 rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60"
       >
         <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5">
           <path

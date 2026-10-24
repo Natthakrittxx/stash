@@ -6,6 +6,7 @@ import {
   Geist_Mono,
   Noto_Serif_Thai,
   Source_Serif_4,
+  VT323,
 } from "next/font/google";
 
 // Runs before first paint so a stored theme never flashes the OS default.
@@ -38,6 +39,12 @@ const sourceSerif = Source_Serif_4({
   subsets: ["latin"],
   variable: "--font-source-serif",
 });
+// The landing's one bitmap face. Latin only; the landing has no Thai copy.
+const bitmap = VT323({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-bitmap",
+});
 const notoSerifThai = Noto_Serif_Thai({
   subsets: ["thai"],
   weight: ["400", "600"],
@@ -51,7 +58,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geist.variable} ${geistMono.variable} ${sourceSerif.variable} ${notoSerifThai.variable}`}
+      className={`${geist.variable} ${geistMono.variable} ${sourceSerif.variable} ${notoSerifThai.variable} ${bitmap.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: noFlash }} />

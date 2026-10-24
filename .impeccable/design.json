@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-24T00:00:00Z",
+  "title": "Design System: Stash",
+  "extensions": {
+    "colorMeta": {
+      "void": { "role": "neutral", "displayName": "Emissive Void", "canonical": "#000000", "tonalRamp": ["#000000", "#0d0d0d", "#1a1a1a", "#2e2e2e", "#4a4a4a", "#6b6b6b", "#a3a3a3", "#ebebeb"] },
+      "ivory": { "role": "neutral", "displayName": "Ivory", "canonical": "#e6e2d6", "tonalRamp": ["#24231f", "#3d3b35", "#58554d", "#767268", "#959185", "#b4b0a4", "#e6e2d6", "#f6f4ee"] },
+      "frost": { "role": "neutral", "displayName": "Frost", "canonical": "#a3a3a3", "tonalRamp": ["#1f1f1f", "#363636", "#4f4f4f", "#6b6b6b", "#878787", "#a3a3a3", "#c7c7c7", "#ededed"] },
+      "far": { "role": "neutral", "displayName": "Far", "canonical": "#7a7a7a", "tonalRamp": ["#1f1f1f", "#363636", "#4f4f4f", "#666666", "#7a7a7a", "#9a9a9a", "#c2c2c2", "#ededed"] },
+      "signal-amber": { "role": "primary", "displayName": "Signal Amber", "canonical": "#ffb000", "tonalRamp": ["#2e1f00", "#4d3500", "#704d00", "#946600", "#b88000", "#db9900", "#ffb000", "#ffe0a3"] },
+      "dust": { "role": "neutral", "displayName": "Dust", "canonical": "rgba(200,196,186,α) at α 0.35 / 0.5 / 0.7", "tonalRamp": ["#22211f", "#3a3935", "#55534e", "#726f69", "#908d85", "#ada9a0", "#c8c4ba", "#ecebe6"] },
+      "hover-ground": { "role": "neutral", "displayName": "Hover Ground", "canonical": "#1a1a1a", "tonalRamp": ["#000000", "#0d0d0d", "#1a1a1a", "#262626", "#333333", "#4a4a4a", "#7a7a7a", "#bdbdbd"] },
+      "frame": { "role": "neutral", "displayName": "Frame", "canonical": "#4a4a4a", "tonalRamp": ["#141414", "#262626", "#383838", "#4a4a4a", "#5f5f5f", "#7a7a7a", "#a3a3a3", "#d6d6d6"] }
+    },
+    "typographyMeta": {
+      "hero": { "displayName": "Hero", "purpose": "The landing headline only, followed by the blinking amber caret block. Height-capped so the demo stays in the first viewport." },
+      "display": { "displayName": "Display", "purpose": "Section headings, specimen titles, and the search prompt line." },
+      "body": { "displayName": "Body", "purpose": "Everything else: sub-lines, labels, nav, buttons, notes, footer. Prose caps at 40 to 52ch." },
+      "row": { "displayName": "Row", "purpose": "Ranked list rows at near and far rank." },
+      "row-front": { "displayName": "Row, front", "purpose": "A matched row pulled forward; tracking widens to 0.06em as a depth cue." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "hover", "value": "150ms ease (colors)", "purpose": "Link and primary-action color and fill changes." },
+      { "name": "re-rank", "value": "300ms ease-out on color, letter-spacing, translate (FLIP)", "purpose": "Rows glide to their new slot as a query pulls matches forward." },
+      { "name": "sway", "value": "9s ease-in-out infinite, translateX 9px or 16px", "purpose": "Receded rows drift sideways with the dust; front rows hold still." },
+      { "name": "caret-blink", "value": "1.06s steps(1) infinite", "purpose": "The amber block caret after the hero headline." },
+      { "name": "auto-type", "value": "900ms delay, then 120ms per character", "purpose": "Types the demo query once when the field is half on screen; any visitor input cancels it." },
+      { "name": "dust-drift", "value": "6 / 12 / 24 px per second across three fields", "purpose": "Ambient depth behind the content; each nearer field moves twice as fast." },
+      { "name": "reduced-motion", "value": "prefers-reduced-motion: reduce", "purpose": "No sway, blink, or glide; dust draws one still frame; demo query appears pre-typed." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The typed-command call to action: amber label behind a > prompt, the world's only hairline frame.",
+      "html": "<a class=\"ds-btn-primary\" href=\"#\">&gt; start a stash</a>",
+      "css": ".ds-btn-primary { display: inline-block; font-family: 'VT323', ui-monospace, monospace; -webkit-font-smoothing: none; font-size: 1.5rem; line-height: 1.3; color: #ffb000; background: transparent; border: 1px solid #4a4a4a; border-radius: 0; padding: 6px 16px; text-decoration: none; transition: border-color 150ms, background-color 150ms; } .ds-btn-primary:hover { border-color: #ffb000; background: #1a1a1a; } .ds-btn-primary:active { background: #000; } .ds-btn-primary:focus-visible { outline: 2px solid #ffb000; outline-offset: 4px; }"
+    },
+    {
+      "name": "Inline Link",
+      "kind": "custom",
+      "refersTo": "link-inline",
+      "description": "Ivory underlined link inside a frost line; amber on hover.",
+      "html": "<p class=\"ds-line\">already have one? <a class=\"ds-link\" href=\"#\">log in</a></p>",
+      "css": ".ds-line { font-family: 'VT323', ui-monospace, monospace; -webkit-font-smoothing: none; font-size: 1.5rem; line-height: 1.3; color: #a3a3a3; background: #000; margin: 0; padding: 8px; } .ds-link { color: #e6e2d6; text-decoration: underline; text-underline-offset: 4px; transition: color 150ms; } .ds-link:hover { color: #ffb000; } .ds-link:focus-visible { outline: 2px solid #ffb000; outline-offset: 4px; }"
+    },
+    {
+      "name": "Header Navigation",
+      "kind": "nav",
+      "refersTo": "nav-link-quiet",
+      "description": "Wordmark left; a quiet frost link and an ivory > prompt link right, all at body size.",
+      "html": "<header class=\"ds-nav\"><span class=\"ds-nav-mark\"><span class=\"ds-nav-tile\">S</span>stash</span><nav class=\"ds-nav-links\"><a class=\"ds-nav-quiet\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z\"/></svg>source</a><a class=\"ds-nav-primary\" href=\"#\">&gt; log in</a></nav></header>",
+      "css": ".ds-nav { display: flex; align-items: center; justify-content: space-between; padding: 24px 16px; background: #000; font-family: 'VT323', ui-monospace, monospace; -webkit-font-smoothing: none; font-size: 1.5rem; line-height: 1.3; color: #e6e2d6; } .ds-nav-mark { display: flex; align-items: center; gap: 12px; } .ds-nav-tile { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 1.4px; background: #e6e2d6; color: #000; font-size: 1.1rem; } .ds-nav-links { display: flex; align-items: center; gap: 24px; } .ds-nav-quiet { display: inline-flex; align-items: center; gap: 8px; color: #a3a3a3; text-decoration: none; transition: color 150ms; } .ds-nav-quiet:hover { color: #e6e2d6; } .ds-nav-primary { color: #e6e2d6; text-decoration: none; transition: color 150ms; } .ds-nav-primary:hover { color: #ffb000; } .ds-nav a:focus-visible { outline: 2px solid #ffb000; outline-offset: 4px; }"
+    },
+    {
+      "name": "Search Prompt",
+      "kind": "input",
+      "refersTo": "search-prompt",
+      "description": "A bare display-size line behind an amber > prompt; no box, amber caret, far placeholder, frost status line beneath.",
+      "html": "<div class=\"ds-prompt\"><label class=\"ds-prompt-label\" for=\"ds-q\">search a sample stash. type any word you'd remember.</label><div class=\"ds-prompt-line\"><span class=\"ds-prompt-chev\" aria-hidden=\"true\">&gt;</span><input id=\"ds-q\" class=\"ds-prompt-input\" type=\"search\" placeholder=\"ssh, images, git\" autocomplete=\"off\" spellcheck=\"false\"></div><p class=\"ds-prompt-status\" aria-live=\"polite\">9 things saved. nothing asked for yet.</p></div>",
+      "css": ".ds-prompt { background: #000; padding: 16px; font-family: 'VT323', ui-monospace, monospace; -webkit-font-smoothing: none; font-size: 1.5rem; line-height: 1.3; color: #a3a3a3; } .ds-prompt-label { display: block; } .ds-prompt-line { display: flex; align-items: baseline; gap: 16px; margin-top: 8px; font-size: clamp(2.25rem, 5.5vw, 3.75rem); line-height: 1; } .ds-prompt-chev { color: #ffb000; } .ds-prompt-input { flex: 1; min-width: 0; font: inherit; color: #e6e2d6; caret-color: #ffb000; background: transparent; border: 0; outline: none; padding: 0; } .ds-prompt-input::placeholder { color: #7a7a7a; } .ds-prompt-input::-webkit-search-cancel-button { display: none; } .ds-prompt-status { margin: 0; }"
+    },
+    {
+      "name": "Ranked Rows",
+      "kind": "custom",
+      "refersTo": "row-front",
+      "description": "Saved items as two baselines; rank sets the light. Front is ivory and tracked out with amber matches; near is frost; far is the far step and sways.",
+      "html": "<ul class=\"ds-rows\"><li class=\"ds-row ds-row-front\"><span class=\"ds-row-kind\">tool</span><span><span class=\"ds-row-title\">squoosh</span><span class=\"ds-row-sub\">squoosh.app · <mark>images</mark></span></span></li><li class=\"ds-row ds-row-near\"><span class=\"ds-row-kind\">formula</span><span><span class=\"ds-row-title\">kill whatever holds a port</span><span class=\"ds-row-sub\">lsof -ti :3000 | xargs kill · dev ports</span></span></li><li class=\"ds-row ds-row-far\"><span class=\"ds-row-kind\">tool</span><span><span class=\"ds-row-title\">regex101</span><span class=\"ds-row-sub\">regex101.com · dev regex</span></span></li></ul>",
+      "css": ".ds-rows { list-style: none; margin: 0; padding: 16px; background: #000; display: grid; gap: 16px; font-family: 'VT323', ui-monospace, monospace; -webkit-font-smoothing: none; font-size: 1.5rem; line-height: 1.25; overflow: hidden; } .ds-row { display: grid; grid-template-columns: 7rem minmax(0, 1fr); column-gap: 16px; transition: color 300ms ease-out, letter-spacing 300ms ease-out, translate 300ms ease-out; } .ds-row-title, .ds-row-sub { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-row mark { color: #ffb000; background: transparent; } .ds-row-front { color: #e6e2d6; letter-spacing: 0.06em; } .ds-row-front .ds-row-sub { color: #a3a3a3; } .ds-row-near { color: #a3a3a3; } .ds-row-far { color: #7a7a7a; animation: ds-sway 9s ease-in-out infinite; } @keyframes ds-sway { 50% { transform: translateX(12px); } } @media (prefers-reduced-motion: reduce) { .ds-row-far { animation: none; } }"
+    },
+    {
+      "name": "Hero Headline with Caret",
+      "kind": "custom",
+      "refersTo": "hero",
+      "description": "The one hero-size line, ending in a blinking amber block caret.",
+      "html": "<h1 class=\"ds-hero\">save it now.<br>find it later.<span class=\"ds-caret\" aria-hidden=\"true\"></span></h1>",
+      "css": ".ds-hero { margin: 0; padding: 16px; background: #000; color: #e6e2d6; font-family: 'VT323', ui-monospace, monospace; -webkit-font-smoothing: none; font-weight: 400; font-size: clamp(3.5rem, min(10vw, 14vh), 8.5rem); line-height: 0.85; letter-spacing: -0.01em; } .ds-caret { display: inline-block; margin-left: 8px; width: 0.32em; height: 0.55em; background: #ffb000; animation: ds-blink 1.06s steps(1) infinite; } @keyframes ds-blink { 50% { opacity: 0; } } @media (prefers-reduced-motion: reduce) { .ds-caret { animation: none; } }"
+    },
+    {
+      "name": "Specimen",
+      "kind": "custom",
+      "refersTo": "display",
+      "description": "Explainer for one kind: frost kind column, display title, ivory literal line, frost note.",
+      "html": "<div class=\"ds-spec\"><span class=\"ds-spec-kind\">formula</span><div><p class=\"ds-spec-title\">undo last commit, keep changes</p><p class=\"ds-spec-line\">git reset --soft HEAD~1</p><p class=\"ds-spec-note\">a formula is a command you keep forgetting, kept exactly as you typed it.</p></div></div>",
+      "css": ".ds-spec { display: grid; grid-template-columns: 7rem minmax(0, 1fr); column-gap: 16px; padding: 16px; background: #000; font-family: 'VT323', ui-monospace, monospace; -webkit-font-smoothing: none; font-size: 1.5rem; line-height: 1.3; } .ds-spec-kind { color: #a3a3a3; } .ds-spec p { margin: 0; } .ds-spec-title { color: #e6e2d6; font-size: clamp(2.25rem, 5.5vw, 3.75rem); line-height: 1; overflow-wrap: break-word; } .ds-spec-line { color: #e6e2d6; margin-top: 8px !important; word-break: break-all; } .ds-spec-note { color: #a3a3a3; margin-top: 8px !important; max-width: 52ch; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Cracktro Scroller",
+    "overview": "Stash is a demoscene title screen. An emissive black void, one bitmap face, one signal amber, and dust drifting behind. Your query is the one still line; everything you saved rides baselines in a depth field behind it, and the things that match come forward. Depth is rank: nearness is brightness, letterspacing, and stillness, never a raised surface.\n\nThe world is built from text alone. There are no cards, panels, dividers, or containers; content sits directly on the void and hierarchy comes from three type sizes and a four-step light ramp. The one chromatic voice is amber, and it means \"here\": the caret, the prompt, the primary action, the matched characters. Motion is ambient and slow behind the content, and the front row holds still so it can be read.\n\nMigration status. Only the public landing (src/app/landing.tsx) ships this world today, scoped under the .void subtree in src/styles/globals.css. The app UI (src/app/stash/*, login, signup, auth-form.tsx) and the global @theme tokens still run the previous \"Card Catalog\" system: cool neutrals, enamel teal accent, Source Serif / Geist / Geist Mono, light and dark themes. Those surfaces are expected to migrate later. Until they do, this file describes the target world and the landing as built; it is not a description of the app as it currently renders. A future migration also needs a void value for the danger state, which the landing never had to define.",
+    "keyCharacteristics": [
+      "Emissive black void owns the whole route, overscroll and scrollbar included.",
+      "One bitmap face (VT323, weight 400), three sizes: body, display, hero.",
+      "One signal amber for caret, prompt, primary action, and query matches.",
+      "Depth is rank: front rows are ivory, tracked out, and still; receded rows are dim and sway.",
+      "Two dust ribbons drift on a canvas behind everything at halving speeds.",
+      "No boxes, rules, or cards; the primary action's hairline frame is the single exception."
+    ],
+    "rules": [
+      { "name": "The Four Lights Rule", "body": "Text uses exactly ivory, frost, far, or amber. Rank is expressed by which light a line is lit with; no fifth grey, no tint.", "section": "colors" },
+      { "name": "The Signal Rule", "body": "Amber marks intent and match, nothing else: caret, prompt, primary action, matched characters, focus, selection. If amber appears on something a visitor cannot act on or did not ask for, it is wrong.", "section": "colors" },
+      { "name": "The Floor Is Far Rule", "body": "No text dims below the far step. Dimming a line further (opacity, a darker grey) to push it deeper breaks AA; recede with motion and letterspacing instead.", "section": "colors" },
+      { "name": "The One Face Rule", "body": "VT323 is the only face in this world, at weight 400. No second family, no bold, no italic. Emphasis is size, light step, or amber.", "section": "typography" },
+      { "name": "The Three Sizes Rule", "body": "Body, display, hero. A fourth size is a sign the hierarchy should be carried by light instead.", "section": "typography" },
+      { "name": "The Tracking Is Rank Rule", "body": "Letterspacing widens only to bring a row forward (0.06em). It is a depth cue, never a label style.", "section": "typography" },
+      { "name": "The Depth Is Rank Rule", "body": "Nearness means relevance. Never use depth (brightness, tracking, motion) for decoration, and never express relevance with a box, badge, or fill.", "section": "elevation" },
+      { "name": "The Still Front Rule", "body": "Whatever the visitor must read holds still. Motion belongs to what has receded.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep the void true black and let it own the whole route, overscroll included.",
+      "Do light every line with one of the four lights (ivory, frost, far, amber) and let the step express rank.",
+      "Do keep amber on the caret, the prompt, the primary action, matched characters, focus, and selection only (The Signal Rule).",
+      "Do set everything in VT323 at weight 400 with font smoothing off, at body 1.5rem, display, or hero size.",
+      "Do align groups on shared baselines (items-baseline) rather than boxing them.",
+      "Do show relevance as depth: brighter, tracked to 0.06em, and still at the front.",
+      "Do give every ambient motion a reduced-motion state: one still dust frame, no sway, no blink, query pre-typed.",
+      "Do use the 2px amber outline at 4px offset for keyboard focus."
+    ],
+    "donts": [
+      "Don't put content in cards, panels, or tiles, and don't draw dividers between rows or sections. The primary action's hairline frame is the only drawn line.",
+      "Don't dim text below the far step with opacity or a darker grey; recede with motion and tracking instead (The Floor Is Far Rule).",
+      "Don't introduce a second typeface, a bold weight, or a fourth type size.",
+      "Don't use amber for decoration, backgrounds, or illustration.",
+      "Don't use shadows, glows, or raised surfaces to signal depth or importance.",
+      "Don't animate the row a visitor is reading.",
+      "Don't build the uniform card grid or the generic SaaS dashboard (PRODUCT.md anti-references).",
+      "Don't encode meaning in color alone: matches are also brighter, tracked, still, reordered, and counted in the live-region line."
+    ]
+  }
+}

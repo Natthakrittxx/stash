@@ -1,0 +1,222 @@
+{
+  "title": "Choose Stash's new world",
+  "question": "The roll assigned the Rotary Card File. Keep it, take an alternate, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Rotary Card File",
+      "kicker": "THE ROLL",
+      "lineage": "1950s desk rotary card files",
+      "thesis": "Finding is a turn of the knob: type, and the drum spins to the card.",
+      "palette": [
+        "#1a1d21",
+        "#c9ced4",
+        "#fbfcfd",
+        "#3b6fe0",
+        "#d8351f"
+      ],
+      "materials": [
+        "enameled steel drum",
+        "die-cut ruled cards",
+        "A\u2013Z index tabs"
+      ],
+      "viewport": "Headline left; a large flat-drawn rotary drum right whose knob is a working search field. Type and it clicks to the matching card.",
+      "risk": "Tips into a glossy skeuomorphic toy if the drum is rendered instead of drawn flat and precise.",
+      "raised": [
+        {
+          "from": "challenger-quote",
+          "raise": "Every zone carries its literal name on an index tab; wayfinding is reading."
+        },
+        {
+          "from": "challenger-storm",
+          "raise": "Every keystroke moves the object: the query physically turns the drum."
+        },
+        {
+          "from": "challenger-neon",
+          "raise": "Motion is a counted sequence: the drum clicks card by card, never a smooth blur."
+        },
+        {
+          "from": "challenger-laban",
+          "raise": "Geometry is data: a card's angle on the drum is its place in the alphabet."
+        },
+        {
+          "from": "challenger-bench",
+          "raise": "State is a mark, not a hue: a notch for shared, a punched corner for archived."
+        }
+      ]
+    },
+    {
+      "id": "model-pick",
+      "label": "Back-of-Book Index",
+      "kicker": "IMPECCABLE\u2019S PICK",
+      "lineage": "typeset book indexes",
+      "thesis": "The landing is the index of a stash: terms, locators, see-also.",
+      "palette": [
+        "#f4f7f8",
+        "#111418",
+        "#2340c8"
+      ],
+      "materials": [
+        "two-column index setting",
+        "hanging indents",
+        "locator numerals"
+      ],
+      "viewport": "A full two-column index page; typing in the search filters entries live and the locators light up.",
+      "risk": "Familiar: sits close to the hairline editorial look many runs land on."
+    },
+    {
+      "id": "challenger-cracktro",
+      "label": "Cracktro Scroller",
+      "verdict": "competitive",
+      "lineage": "demoscene cracktro title screens",
+      "thesis": "Saved things ride baselines over a black void; the match you want comes forward.",
+      "palette": [
+        "#050505",
+        "#6b6b6b",
+        "#efe9dc",
+        "#ffb000"
+      ],
+      "materials": [
+        "bitmap face",
+        "drifting dust fields"
+      ],
+      "viewport": "One still ivory line, your query, with results drifting behind at depth; the best match pulls to the front.",
+      "case": "Holds identification for a dev-leaning circle; loses on clarity to a visitor who just wants to know what Stash is.",
+      "risk": "Reads novelty; bitmap type fights Thai titles.",
+      "hero": "https://impeccable.style/worlds/cards/operate-c-cracktro-scroller-queue-hero.webp"
+    },
+    {
+      "id": "challenger-quote",
+      "label": "Industrial Quote Grammar",
+      "verdict": "declined",
+      "lineage": "industrial streetwear labeling",
+      "thesis": "Ordinary words in straight quotes, zip-tie tags, hazard stripes.",
+      "palette": [
+        "#ffffff",
+        "#0b0b0b",
+        "#ff5a1f"
+      ],
+      "materials": [
+        "cotton and nylon",
+        "zip-tie tags"
+      ],
+      "viewport": "Giant quoted caps naming \"SAVE\" and \"FIND\".",
+      "case": "Loses both axes: fashion swagger, not a trusted archive.",
+      "risk": "Shouts at a product built on quiet.",
+      "kept": "Literal labeling: every zone names itself.",
+      "hero": "https://impeccable.style/worlds/cards/textiles-weave-drape-fashion-industrial-quote-grammar-hero.webp"
+    },
+    {
+      "id": "challenger-storm",
+      "label": "Alphabet Storm",
+      "verdict": "declined",
+      "lineage": "surreal typographic worlds",
+      "thesis": "Letters condense into words and break into weather.",
+      "palette": [
+        "#fafafa",
+        "#0a0a0a",
+        "#b9c0c7"
+      ],
+      "materials": [
+        "monumental grotesk",
+        "particle letters"
+      ],
+      "viewport": "Typed words become weather fronts.",
+      "case": "Loses both axes: spectacle hides the plain job.",
+      "risk": "Search becomes a toy.",
+      "kept": "Typing has a physical consequence.",
+      "hero": "https://impeccable.style/worlds/cards/dream-surreal-impossible-worlds-alphabet-storm-hero.webp"
+    },
+    {
+      "id": "challenger-neon",
+      "label": "Desert Neon Sign Program",
+      "verdict": "declined",
+      "lineage": "motel sign fabrication drawings",
+      "thesis": "A tall porcelain sign with a numbered chase-lamp arrow.",
+      "palette": [
+        "#0d1020",
+        "#3fc1b0",
+        "#ff4f7a"
+      ],
+      "materials": [
+        "porcelain enamel",
+        "neon"
+      ],
+      "viewport": "A sign elevation pointing at the CTA.",
+      "case": "Loses both axes: roadside promise, not private archive.",
+      "risk": "Pure nostalgia costume.",
+      "kept": "Motion as a counted, numbered sequence.",
+      "hero": "https://impeccable.style/worlds/cards/vernacular-ephemera-desert-neon-sign-program-hero.webp"
+    },
+    {
+      "id": "challenger-laban",
+      "label": "Labanotation Score",
+      "verdict": "declined",
+      "lineage": "dance notation",
+      "thesis": "A vertical staff where shape and length are exact data.",
+      "palette": [
+        "#ffffff",
+        "#000000",
+        "#d9d9d9"
+      ],
+      "materials": [
+        "score paper",
+        "hatched blocks"
+      ],
+      "viewport": "Saves as blocks rising up a time staff.",
+      "case": "Loses both axes: unreadable notation for a plain tool.",
+      "risk": "Nobody can read it.",
+      "kept": "Geometry encodes data exactly.",
+      "hero": "https://impeccable.style/worlds/cards/notation-diagram-systems-labanotation-hero.webp"
+    },
+    {
+      "id": "challenger-bench",
+      "label": "Cutting Bench Select Rail",
+      "verdict": "declined",
+      "lineage": "film editing benches",
+      "thesis": "A perforated rail of frames on grain orange.",
+      "palette": [
+        "#000000",
+        "#ff6a13",
+        "#ffffff"
+      ],
+      "materials": [
+        "film grain",
+        "tape flags"
+      ],
+      "viewport": "Saves strung along a film rail.",
+      "case": "Loses both axes: an editor's workflow, not a stash.",
+      "risk": "Orange third of screen overwhelms content.",
+      "kept": "State is a mark, not a hue.",
+      "hero": "https://impeccable.style/worlds/cards/operate-a-cutting-bench-select-rail-hero.webp"
+    }
+  ],
+  "reroll": {
+    "registers": [
+      "safer",
+      "bolder"
+    ]
+  },
+  "buildPath": {
+    "value": "code",
+    "toggle": false
+  },
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "thesis": "A read-it-later landing executed cleanly.",
+    "palette": [
+      "#ffffff",
+      "#111827",
+      "#0f766e"
+    ],
+    "materials": [
+      "clean grid",
+      "product screenshot"
+    ],
+    "viewport": "Headline, CTA, app screenshot, three feature rows.",
+    "risk": "Indistinguishable from Pocket and Raindrop by design."
+  },
+  "steer": true,
+  "seed": "93b4b00b"
+}
