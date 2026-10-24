@@ -361,7 +361,7 @@ export function Stash({
             target="_blank"
             rel="noopener noreferrer"
             aria-label="GitHub repository (opens in a new tab)"
-            className={`grid h-9 w-9 shrink-0 place-items-center rounded text-muted transition-colors duration-150 hover:text-ink ${focusRing}`}
+            className={`text-muted hover:text-ink grid h-9 w-9 shrink-0 place-items-center rounded transition-colors duration-150 ${focusRing}`}
           >
             <GitHubMark className="size-[18px]" />
           </a>
@@ -1378,7 +1378,13 @@ function SectionHeading({
 // reinforces the mark — term-accent teal on success, danger-rose on failure —
 // so state never rides on color alone. Terminal-only: it owns its term-* tones
 // and the caller passes layout/focus classes. `className` stays free of color.
-function CopyButton({ text, className }: { text: string; className: string }) {
+export function CopyButton({
+  text,
+  className,
+}: {
+  text: string;
+  className: string;
+}) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
   async function copy() {

@@ -1,243 +1,277 @@
 ---
 name: Stash
-description: A cracktro title screen for the links and commands you keep losing; your query is the one still line.
+description: A quiet, typographic place to save things and find them again.
 colors:
-  void: "#000000"
-  ivory: "#e6e2d6"
-  frost: "#a3a3a3"
-  far: "#7a7a7a"
-  signal-amber: "#ffb000"
-  dust: "#c8c4ba"
-  hover-ground: "#1a1a1a"
-  frame: "#4a4a4a"
+  accent: "#005f66"
+  ink: "#14181a"
+  muted: "#5a6462"
+  bg: "#f5f7f7"
+  surface: "#e7ebeb"
+  border: "#d3dad9"
+  danger: "#b02a37"
+  accent-dark: "#4bc3cc"
+  ink-dark: "#e9eeed"
+  muted-dark: "#9ba9a7"
+  bg-dark: "#0e1413"
+  surface-dark: "#172020"
+  border-dark: "#33413f"
+  danger-dark: "#f0a0a8"
+  term-bg: "#0e1413"
+  term-surface: "#172020"
+  term-border: "#33413f"
+  term-ink: "#e9eeed"
+  term-muted: "#9ba9a7"
+  term-accent: "#4bc3cc"
+  term-danger: "#f0a0a8"
 typography:
   hero:
-    fontFamily: "VT323, ui-monospace, monospace"
-    fontSize: "clamp(3.5rem, min(10vw, 14vh), 8.5rem)"
+    fontFamily: "Source Serif 4, Noto Serif Thai, ui-serif, Georgia, serif"
+    fontSize: "clamp(2.5rem, 7vw, 4.5rem)"
     fontWeight: 400
-    lineHeight: 0.85
-    letterSpacing: "-0.01em"
+    lineHeight: 1.05
+    letterSpacing: "-0.025em"
   display:
-    fontFamily: "VT323, ui-monospace, monospace"
-    fontSize: "clamp(2.25rem, 5.5vw, 3.75rem)"
+    fontFamily: "Source Serif 4, Noto Serif Thai, ui-serif, Georgia, serif"
+    fontSize: "1.875rem"
     fontWeight: 400
     lineHeight: 1
-    letterSpacing: "normal"
+  headline:
+    fontFamily: "Source Serif 4, Noto Serif Thai, ui-serif, Georgia, serif"
+    fontSize: "1.5rem"
+    fontWeight: 400
+  title:
+    fontFamily: "Source Serif 4, Noto Serif Thai, ui-serif, Georgia, serif"
+    fontSize: "1.125rem"
+    fontWeight: 400
+    lineHeight: 1.75
   body:
-    fontFamily: "VT323, ui-monospace, monospace"
-    fontSize: "1.5rem"
+    fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.9375rem"
     fontWeight: 400
-    lineHeight: 1.3
-    letterSpacing: "normal"
-  row:
-    fontFamily: "VT323, ui-monospace, monospace"
-    fontSize: "1.5rem"
+  label:
+    fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.8125rem"
     fontWeight: 400
-    lineHeight: 1.25
-    letterSpacing: "normal"
-  row-front:
-    fontFamily: "VT323, ui-monospace, monospace"
-    fontSize: "1.5rem"
+  command:
+    fontFamily: "Geist Mono, ui-monospace, monospace"
+    fontSize: "0.9375rem"
     fontWeight: 400
-    lineHeight: 1.25
-    letterSpacing: "0.06em"
+    lineHeight: 1.625
 rounded:
-  none: "0px"
+  sm: "4px"
+  lg: "8px"
+  full: "9999px"
 spacing:
-  line: "8px"
-  sm: "16px"
-  md: "24px"
-  lg: "32px"
-  xl: "48px"
-  section: "112px"
+  tight: "4px"
+  sm: "8px"
+  md: "16px"
+  lg: "24px"
+  xl: "40px"
+  section: "96px"
 components:
   button-primary:
-    backgroundColor: "{colors.void}"
-    textColor: "{colors.signal-amber}"
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.bg}"
     typography: "{typography.body}"
-    rounded: "{rounded.none}"
-    padding: "6px 16px"
-  button-primary-hover:
-    backgroundColor: "{colors.hover-ground}"
-    textColor: "{colors.signal-amber}"
-  link-inline:
-    textColor: "{colors.ivory}"
+    rounded: "{rounded.sm}"
+    padding: "8px 16px"
+  button-quiet:
+    textColor: "{colors.muted}"
+    typography: "{typography.label}"
+    rounded: "{rounded.sm}"
+    padding: "4px 8px"
+  segment-on:
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.bg}"
+    typography: "{typography.label}"
+    rounded: "{rounded.sm}"
+    padding: "4px 10px"
+  segment-off:
+    textColor: "{colors.muted}"
+    typography: "{typography.label}"
+    rounded: "{rounded.sm}"
+    padding: "4px 10px"
+  input-field:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.ink}"
     typography: "{typography.body}"
-  link-inline-hover:
-    textColor: "{colors.signal-amber}"
-  nav-link-quiet:
-    textColor: "{colors.frost}"
-    typography: "{typography.body}"
-  nav-link-quiet-hover:
-    textColor: "{colors.ivory}"
-  search-prompt:
-    backgroundColor: "{colors.void}"
-    textColor: "{colors.ivory}"
-    typography: "{typography.display}"
-    rounded: "{rounded.none}"
-  row-front:
-    textColor: "{colors.ivory}"
-    typography: "{typography.row-front}"
-  row-near:
-    textColor: "{colors.frost}"
-    typography: "{typography.row}"
-  row-far:
-    textColor: "{colors.far}"
-    typography: "{typography.row}"
+    rounded: "{rounded.sm}"
+    padding: "8px 12px"
+  input-search:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.ink}"
+    typography: "{typography.title}"
+    rounded: "{rounded.sm}"
+    padding: "10px 40px 10px 12px"
+  row-tile:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.sm}"
+    width: "112px"
+    height: "64px"
+  formula-card:
+    backgroundColor: "{colors.term-bg}"
+    textColor: "{colors.term-ink}"
+    typography: "{typography.command}"
+    rounded: "{rounded.lg}"
+    padding: "12px"
+  composer:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.sm}"
+    padding: "16px"
+  toast:
+    backgroundColor: "{colors.surface}"
+    typography: "{typography.label}"
+    rounded: "{rounded.sm}"
+    padding: "12px 16px"
 ---
 
 # Design System: Stash
 
 ## Overview
 
-**Creative North Star: "The Cracktro Scroller"**
+**Creative North Star: "The Card Catalog"**
 
-Stash is a demoscene title screen. An emissive black void, one bitmap face, one signal amber, and dust drifting behind. Your query is the one still line; everything you saved rides baselines in a depth field behind it, and the things that match come forward. Depth is rank: nearness is brightness, letterspacing, and stillness, never a raised surface.
+Stash is a library drawer, not a dashboard. Every saved thing is a catalogued entry: a small tile to recognise it by, a serif title to read it by, and a muted line of host and tags to file it by. The whole product, landing page included, runs this one world. The landing does not perform a separate brand; its demo frame is the app's own list (tool rows and terminal formula cards) behind the app's own search field, so what a visitor sees is what they get.
 
-The world is built from text alone. There are no cards, panels, dividers, or containers; content sits directly on the void and hierarchy comes from three type sizes and a four-step light ramp. The one chromatic voice is amber, and it means "here": the caret, the prompt, the primary action, the matched characters. Motion is ambient and slow behind the content, and the front row holds still so it can be read.
+The palette is cool paper and ink with one enamel teal. Neutrals lean slightly toward the accent's hue and never warm. Depth is tonal: a surface step and a hairline, never a lifted card. Type carries the hierarchy in three voices: a book serif for anything you read as content (titles, headings, the hero), a neutral sans for the controls around it, and a mono for commands. Commands get their own material: an always-dark console card that stays dark in both themes, because a command lives in a terminal.
 
-**Migration status.** Only the public landing (`src/app/landing.tsx`) ships this world today, scoped under the `.void` subtree in `src/styles/globals.css`. The app UI (`src/app/stash/*`, login, signup, `auth-form.tsx`) and the global `@theme` tokens still run the previous "Card Catalog" system: cool neutrals, enamel teal accent, Source Serif / Geist / Geist Mono, light and dark themes. Those surfaces are expected to migrate later. Until they do, this file describes the target world and the landing as built; it is not a description of the app as it currently renders. A future migration also needs a void value for the danger state, which the landing never had to define.
+Light and dark are both first-class. The OS preference drives the theme until the toggle writes an explicit choice, and every token flips from one set of custom properties.
 
 **Key Characteristics:**
-
-- Emissive black void owns the whole route, overscroll and scrollbar included.
-- One bitmap face (VT323, weight 400), three sizes: body, display, hero.
-- One signal amber for caret, prompt, primary action, and query matches.
-- Depth is rank: front rows are ivory, tracked out, and still; receded rows are dim and sway.
-- Two dust ribbons drift on a canvas behind everything at halving speeds.
-- No boxes, rules, or cards; the primary action's hairline frame is the single exception.
+- One world across landing, auth, and app; the landing demo reuses the app's row and formula idioms.
+- Cool neutrals plus a single teal accent; one semantic hue (danger) beyond it.
+- Serif for content, sans for chrome, mono for commands.
+- Flat and tonal; the only shadow belongs to the floating toast.
+- Selection and state are never carried by color alone.
 
 ## Colors
 
-An achromatic light ramp on true black, with one hot amber held to the points of intent.
+Cool paper, near-black ink, and one enamel teal; the dark theme inverts the ramp and lifts the teal so it still clears contrast.
 
 ### Primary
-
-- **Signal Amber**: the caret block, the `>` prompt, the primary action's label, matched query characters inside rows, the text selection ground, and the focus outline. It clears 11:1 on the void. Nothing decorative is amber.
+- **Enamel Teal** (accent; accent-dark in dark theme): the one active color. Primary button fill, selected segment and filter fill, links, the selected row's chevron, focus outlines, and the hero's closing full stop. Text on its fill is the background color.
 
 ### Neutral
+- **Catalog Paper** (bg / bg-dark): page ground and input fill.
+- **Drawer Grey** (surface / surface-dark): the one tonal step. Hovered and selected rows, row tiles, composer panel, toast, the in-pane command block.
+- **Hairline** (border / border-dark): dividers between rows, section rules, tile and input outlines, the landing's demo frame.
+- **Ink** (ink / ink-dark): titles, headings, input text.
+- **Pencil** (muted / muted-dark): secondary text. Hosts, tags, descriptions, counts, idle controls, placeholders.
 
-- **Void**: the ground of the whole route, including the `html` element behind overscroll. True black, so the screen reads as emissive rather than as a dark-mode surface.
-- **Ivory**: the brightest step. Headlines, the query text, front-ranked rows, specimen titles, inline links. 15.6:1 on the void.
-- **Frost**: secondary text. Sub-lines, row status, kind labels, the demo label, unmatched near rows, the quiet nav link. 8.4:1.
-- **Far**: the receded step. Rows pushed back by a query, the input placeholder, the footer. 4.6:1 to 4.9:1, the floor for any text in this world.
-- **Dust**: the canvas particle color, only ever drawn at 0.35 / 0.5 / 0.7 alpha. It carries no meaning and is exempt from text contrast for that reason.
-- **Hover Ground**: the one tonal fill, appearing only under the primary action on hover.
-- **Frame**: the hairline around the primary action at rest.
+### Semantic
+- **Wine** (danger / danger-dark): destructive actions on hover, error messages, failed copy. Always paired with a mark or the word, never color alone.
+
+### Terminal (fixed)
+- **Console** (term-bg, term-surface, term-border, term-ink, term-muted, term-accent, term-danger): the formula card's palette. Pinned to the dark-theme values so the card never flips with the app theme. term-accent marks the prompt and a successful copy.
 
 ### Named Rules
+**The One Enamel Rule.** Teal is the only hue that means "active" or "go". Anything selected, primary, focused, or linked is teal; nothing decorative is.
 
-**The Four Lights Rule.** Text uses exactly ivory, frost, far, or amber. Rank is expressed by which light a line is lit with; no fifth grey, no tint.
+**The Cool Neutral Rule.** Neutrals are tinted toward the accent's hue. Warm greys, creams, and beiges do not belong in this drawer.
 
-**The Signal Rule.** Amber marks intent and match, nothing else: caret, prompt, primary action, matched characters, focus, selection. If amber appears on something a visitor cannot act on or did not ask for, it is wrong.
-
-**The Floor Is Far Rule.** No text dims below the far step. Dimming a line further (opacity, a darker grey) to push it deeper breaks AA; recede with motion and letterspacing instead.
+**The Pinned Console Rule.** The terminal palette never follows the theme toggle. A command card is dark on a light page and dark on a dark page.
 
 ## Typography
 
-**Display Font:** VT323 (with ui-monospace, monospace)
-**Body Font:** VT323 (with ui-monospace, monospace)
+**Content Font:** Source Serif 4, with Noto Serif Thai behind it, then ui-serif and Georgia
+**UI Font:** Geist, with ui-sans-serif and system-ui
+**Command Font:** Geist Mono, with ui-monospace
 
-**Character:** One bitmap terminal face, rendered with font smoothing off so its pixels stay hard. Its small x-height is why body sits at 1.5rem: it reads like ordinary 16px text.
+**Character:** A book serif carries what you saved; a quiet grotesque carries what you do to it. Thai sits behind the Latin serif in the same stack so a Thai title lands in a serif instead of a system sans.
 
 ### Hierarchy
-
-- **Hero** (400, `clamp(3.5rem, min(10vw, 14vh), 8.5rem)`, 0.85, -0.01em): the landing headline only, followed by the blinking amber caret block. Capped by viewport height so the demo stays in the first view.
-- **Display** (400, `clamp(2.25rem, 5.5vw, 3.75rem)`, 1): section headings, specimen titles, and the search prompt line.
-- **Body** (400, 1.5rem, 1.3): everything else: sub-lines, labels, nav, buttons, notes, footer. Prose caps at 40 to 52ch.
-- **Row** (400, 1.5rem, 1.25): ranked list rows. The front-ranked variant tracks out to 0.06em.
-
-All copy is lowercase sentence fragments with periods, except the sub-line under the hero, which uses ordinary sentence case.
+- **Hero** (400, clamp(2.5rem, 7vw, 4.5rem), 1.05, tight tracking): landing headline only; the closing full stop is set in teal. The single fluid size in the system.
+- **Display** (400, 1.875rem, leading-none): the wordmark beside the logo, the detail pane's title.
+- **Headline** (400, 1.5rem): section headings on the landing, auth page heading, monogram letters in row tiles.
+- **Title** (400, 1.125rem, 1.75 for Thai): row titles, empty-state lines, the search field's text, the landing sub-line.
+- **Body** (Geist 400, 0.9375rem): descriptions, form fields, primary buttons, the kinds list.
+- **Label** (Geist 400, 0.8125rem): hosts, tags, counts, segmented controls, filter rows, toasts, footer. Semibold only for section headings and the selected row title.
+- **Command** (Geist Mono, body size, 1.625): commands in formula cards and the detail pane.
 
 ### Named Rules
+**The Fixed Scale Rule.** The app's scale is five fixed rem steps at about 1.2 (label 0.8125, body 0.9375, title 1.125, headline 1.5, display 1.875). No clamp() inside the product; the landing hero is the one fluid exception.
 
-**The One Face Rule.** VT323 is the only face in this world, at weight 400. No second family, no bold, no italic. Emphasis is size, light step, or amber.
+**The Thai Leading Rule.** Anything that can hold Thai, titles above all, gets 1.75 line-height so stacked tone marks never clip.
 
-**The Three Sizes Rule.** Body, display, hero. A fourth size is a sign the hierarchy should be carried by light instead.
-
-**The Tracking Is Rank Rule.** Letterspacing widens only to bring a row forward (0.06em). It is a depth cue, never a label style.
+**The Sentence Case Rule.** Section labels and rail headings are sentence case, muted, and untracked.
 
 ## Layout
 
-A single centred column, max 72rem (`max-w-6xl`), with 16px side padding on mobile and 32px from the `sm` breakpoint (640px). Header: wordmark left, nav right, 24px vertical padding. Text rides baselines: groups align with `items-baseline`, never centred in boxes.
+The landing is a single centered column (max 56rem) with 16px gutters (24px from sm), the hero opening 80px down (112px from sm) and sections spaced 96px apart. Prose caps at 44ch for the sub-line and 52 to 60ch elsewhere. The kinds list is a definition list: term over description on mobile, a 10rem term column beside it from sm.
 
-Ranked rows and specimens share a two-column grid from `sm` up: a 7rem kind column (tool / formula / search) and a fluid content column with a 16px gutter. On mobile the kind column collapses and the kind is folded into the sub-line ahead of a `·` separator. Long lines truncate with an ellipsis in rows and break anywhere in specimens.
+The app is a full-width master–detail layout. Below lg (64rem) it is one column: filters as inline pills above a list. From lg, a 13rem sticky filter rail, the list, and a 24rem sticky detail pane sit side by side with 40px gaps; both sticky columns pin at 40px from the top. Auth is a centered 24rem column, vertically centred.
 
-Rhythm: 8px between a title and its sub-lines, 16px between rows, 24px from a heading to its sub-line, 32px to an action or list, 48px into a section's body, 56px between specimens, and 112px between major sections. The dust canvas is fixed to the viewport behind the column.
+Rhythm is a 4px base: 4 and 8px inside controls, 16px row padding and tile gap, 24 to 40px between groups, 96px between landing sections. Lists are dense by divider, not by card: rows separated by a hairline with 16px vertical padding; formula cards stack with a 12px gap.
 
 ## Elevation & Depth
 
-There are no shadows and no raised surfaces. Depth is rank, carried by three cues at once: brightness (ivory, frost, far), letterspacing (0.06em at the front), and stillness (front rows hold; receded rows sway sideways 9 to 16px on a 9s ease-in-out loop). Behind the content, three dust fields drift at 6, 12, and 24 px/s, with nearer fields sparser, larger (0.6 / 0.9 / 1.3px radius), and brighter, arranged in two slow wave ribbons whose edges fray into the void.
+Flat by default. Depth is conveyed by the surface step (bg to surface) and 1px hairlines, never by lift. Hover and selection change the ground, not the height. The only shadow in the build is Tailwind's large shadow on the fixed-bottom toast, which genuinely floats over content.
 
-When a query re-ranks the list, rows glide to their new slot (FLIP on `translate`, 300ms ease-out) while color and tracking transition together, so a match visibly pulls forward. With reduced motion, the sway, caret blink, and glide stop, the dust draws one still frame, and the demo query appears already typed.
+### Shadow Vocabulary
+- **Toast float** (`box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)`): the undo and error toasts only.
 
 ### Named Rules
-
-**The Depth Is Rank Rule.** Nearness means relevance. Never use depth (brightness, tracking, motion) for decoration, and never express relevance with a box, badge, or fill.
-
-**The Still Front Rule.** Whatever the visitor must read holds still. Motion belongs to what has receded.
+**The Tonal Depth Rule.** A container is distinguished by a surface step or a hairline. If something needs a shadow, it should be floating over content; otherwise it does not get one.
 
 ## Shapes
 
-Square and unframed. Content has no containers, so there are no corners to round. The only drawn line in the world is the 1px frame around the primary action, square-cornered. Inline links use an underline offset 4px. The StashMark logo tile keeps its own 1.4px corner as part of the mark, not as a system radius. The caret is a solid amber block (0.32em by 0.55em).
+Small, quiet corners. Controls, inputs, tiles, the composer, and toasts share a 4px radius. The two framed containers that hold whole compositions, the formula console and the landing's demo frame, take 8px. Fully round shapes appear only as the console's three title-bar dots; mobile filter "pills" keep the 4px corner. Borders are 1px hairlines throughout; the console's border uses the terminal hairline.
 
 ## Components
 
 ### Buttons
+- **Shape:** gently squared (4px).
+- **Primary:** teal fill, background-colored body text, 8px by 16px. Hover drops opacity to 90% over 150ms; disabled holds at 60%.
+- **Quiet:** muted label text with no fill, 4px by 8px; destructive quiet buttons (Delete) turn wine on hover.
+- **Text link:** teal, underline on hover.
+- **Focus:** a 2px teal outline offset 2px on every interactive element.
 
-The primary action reads as a typed command.
-
-- **Shape:** square (0px), hairline frame in the frame grey.
-- **Primary:** amber label prefixed with the `>` prompt ("> start a stash"), transparent on the void, 6px by 16px padding.
-- **Hover / Focus:** frame turns amber and the hover ground fills in, over 150ms. Active drops the fill back to black. Focus is the shared 2px amber outline at 4px offset.
-- It appears twice on the landing (under the hero and at the close), always paired with a frost "already have one? log in" line on the same baseline.
-
-### Links
-
-- **Inline:** ivory with a 4px-offset underline; amber on hover, 150ms.
-- **Nav, primary:** ivory with the `>` prompt ("> log in"), amber on hover, no underline.
-- **Nav, quiet:** frost, ivory on hover; may carry a 16px brand mark (the GitHub mark) ahead of the label.
+### Segmented controls and filter rows
+- **Style:** label-size text, 4px by 10px, 4px radius. Off: muted text, ink on hover (filter rows also take the surface ground on hover).
+- **On:** teal fill with background-colored text plus a check mark in a slot reserved in both states, so selection never reflows and never rides on color alone. Weight does not change.
+- **Filter rail:** inline pills on mobile; full-width rows with a right-aligned tabular count from lg. Shared by kind tabs, the composer's tool/formula toggle, and tag filters.
 
 ### Inputs / Fields
+- **Field:** background-colored fill, 1px hairline, 4px radius, 8px by 12px, body text, muted placeholder.
+- **Search:** the one input that leads. A step larger (title size, 10px vertical) with a 40px right gutter for the idle `/` key hint, shown as a hairline-boxed label-size kbd.
+- **Focus:** teal outline as above.
+- **Error:** wine label text with a mark, announced as an alert.
 
-The search prompt is a bare line, not a field.
+### Tool row
+- **Structure:** a 112 by 64px tile (og:image, object-contain on the surface ground; a serif monogram as fallback; a mono `$_` for formulae), then a serif title truncated on one line with the host in muted label text beside it, tags beneath in muted label text.
+- **States:** hover and selection take the surface ground; the selected row's title goes semibold and a chevron appears in teal at the trailing edge, with aria-current carrying it to assistive tech.
+- **Row actions:** hidden until row hover or focus on hover-capable pointers; always visible on touch.
 
-- **Style:** display size, ivory text, no background, no border, no outline. An amber `>` prompt sits ahead of it on the same baseline; the text caret is amber. The placeholder is the far step.
-- **Focus:** the line itself is the focus indicator (caret visible); the browser outline is removed on this one element.
-- **Status:** a frost live-region line directly beneath reports the result count or the empty case in plain words.
+### Formula card (signature)
+- **Material:** the pinned console. 8px radius, terminal hairline border. A term-surface title bar with three round dots and the title in mono muted label text; a term-bg body with a teal prompt, the command in mono body text (scrolls horizontally, never wraps), a Copy control, and the description and tags as mono comments (`#`).
+- **Copy:** muted "Copy" turns into term-accent "Copied" or term-danger "Failed" with a mark for two seconds.
 
-### Navigation
+### Detail pane
+- **Structure:** sticky 24rem column from lg. A full-width tile at about 1.9:1, the title in display serif, then actions. Commands here sit in a surface-ground block in theme colors with the same copy control.
 
-Wordmark (StashMark at 24px plus "stash" in body) at top left; links at top right with 24px gaps, all at body size. Same treatment on mobile.
+### Composer
+- **Style:** a surface panel with hairline border, 4px radius, 16px padding, stacking the tool/formula segment, fields, and a primary button with 12px gaps.
 
-### Ranked Row (signature)
+### Toast
+- **Style:** fixed to the bottom center, max 24rem, surface ground, hairline, 4px radius, 12px by 16px, the toast float shadow. Errors carry a wine mark and text.
 
-A saved item as two baselines: title, then a sub-line of url-or-command and tags separated by `·`. Rank sets its light: a match is ivory and tracked out with matched characters in amber; an unranked near row is frost; a receded row is far and sways. Rows never carry a fill, border, or icon. Order changes animate; content never jumps.
-
-### Specimen
-
-A three-line explainer of one kind: the kind in frost in the left column, a display-size ivory title, an ivory literal line (url or command, breaking anywhere), and a frost note capped at 52ch.
+### Landing demo frame
+- **Style:** an 8px-radius hairline frame (16px padding, 24px from sm) holding the app's search field, a polite live status line, and the app's Tools and Formulae sections, each headed by a semibold label with a muted count over a hairline.
 
 ## Do's and Don'ts
 
 ### Do:
-
-- **Do** keep the void true black and let it own the whole route, overscroll included.
-- **Do** light every line with one of the four lights (ivory, frost, far, amber) and let the step express rank.
-- **Do** keep amber on the caret, the prompt, the primary action, matched characters, focus, and selection only (**The Signal Rule**).
-- **Do** set everything in VT323 at weight 400 with font smoothing off, at body 1.5rem, display, or hero size.
-- **Do** align groups on shared baselines (`items-baseline`) rather than boxing them.
-- **Do** show relevance as depth: brighter, tracked to 0.06em, and still at the front.
-- **Do** give every ambient motion a reduced-motion state: one still dust frame, no sway, no blink, query pre-typed.
-- **Do** use the 2px amber outline at 4px offset for keyboard focus.
+- **Do** build every new surface from the app's own idioms: hairline-divided rows, the 112 by 64 tile, serif titles, muted label metadata.
+- **Do** mark every selected or result state with a shape or word as well as color (reserved check slot, chevron, "Copied", "Failed").
+- **Do** set commands in the pinned console palette, in Geist Mono, with a teal prompt.
+- **Do** keep app type on the five fixed rem steps and give Thai-capable text 1.75 leading.
+- **Do** keep the teal as the only active color; danger is the only other hue.
+- **Do** respect reduced motion: transitions collapse to near zero, and the landing's auto-typed demo query appears at once.
 
 ### Don't:
-
-- **Don't** put content in cards, panels, or tiles, and don't draw dividers between rows or sections. The primary action's hairline frame is the only drawn line.
-- **Don't** dim text below the far step with opacity or a darker grey; recede with motion and tracking instead (**The Floor Is Far Rule**).
-- **Don't** introduce a second typeface, a bold weight, or a fourth type size.
-- **Don't** use amber for decoration, backgrounds, or illustration.
-- **Don't** use shadows, glows, or raised surfaces to signal depth or importance.
-- **Don't** animate the row a visitor is reading.
-- **Don't** build the uniform card grid or the generic SaaS dashboard (PRODUCT.md anti-references).
-- **Don't** encode meaning in color alone: matches are also brighter, tracked, still, reordered, and counted in the live-region line.
+- **Don't** use warm neutrals; the drawer is cool.
+- **Don't** let the console card follow the theme toggle.
+- **Don't** lift containers with shadows; reserve the shadow for content that floats.
+- **Don't** introduce tracked uppercase eyebrows over sections; rail and section labels are sentence case and muted.
+- **Don't** add a second accent hue or a decorative use of teal.
+- **Don't** give the landing its own visual world; it runs the app's.
