@@ -12,80 +12,35 @@ import { ThemeToggle } from "./theme-toggle";
 // two fields. Editable later if display names ever matter.
 const nameFrom = (email: string) => email.split("@")[0] ?? email;
 
-export function AuthForm({
-  mode,
-  linkFailed = false,
-}: {
-  mode: "login" | "signup";
-  linkFailed?: boolean;
-}) {
-  const [error, setError] = useState<string | null>(
-    linkFailed
-      ? "That link didn't work. It may have expired or been used already."
-      : null,
-  );
-  const [notice, setNotice] = useState<string | null>(null);
+export function AuthForm({ mode }: { mode: "login" | "signup" }) {
+  const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   const isSignup = mode === "signup";
 
   async function onEmail(formData: FormData) {
     setError(null);
-    setNotice(null);
     setPending(true);
 
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
-    // callbackURL is where the verification link lands once clicked.
+    // Signup signs in straight away; there is no verification step.
     const { error } = isSignup
       ? await authClient.signUp.email({
           email,
           password,
           name: nameFrom(email),
-          callbackURL: "/stash",
         })
-      : await authClient.signIn.email({
-          email,
-          password,
-          callbackURL: "/stash",
-        });
+      : await authClient.signIn.email({ email, password });
 
     if (error) {
       setPending(false);
-      // Sign-in mails a fresh verification link before refusing.
-      if (error.code === "EMAIL_NOT_VERIFIED") {
-        setNotice(`Verify your email first. We sent a new link to ${email}.`);
-      } else {
-        setError(error.message ?? "That didn't work.");
-      }
-      return;
-    }
-    if (isSignup) {
-      // No session until the email is verified.
-      setPending(false);
-      setNotice(`Almost there. Open the link we sent to ${email}.`);
+      setError(error.message ?? "That didn't work.");
       return;
     }
     // Email auth sets the session cookie in place (no provider redirect), so send
     // the browser on ourselves. A full load re-reads the session server-side.
     window.location.assign("/stash");
-  }
-
-  async function onMagicLink(email: string) {
-    setError(null);
-    setNotice(null);
-    setPending(true);
-
-    const { error } = await authClient.signIn.magicLink({
-      email,
-      name: nameFrom(email),
-      callbackURL: "/stash",
-      errorCallbackURL: "/login",
-    });
-
-    setPending(false);
-    if (error) setError(error.message ?? "That didn't work.");
-    else setNotice(`Check ${email} for a login link. It expires in 5 minutes.`);
   }
 
   async function onGoogle() {
@@ -128,13 +83,6 @@ export function AuthForm({
           {error}
         </p>
       )}
-      {notice && (
-        <p role="status" className="text-label text-accent mt-6">
-          <span aria-hidden="true">✓ </span>
-          {notice}
-        </p>
-      )}
-
       <form action={onEmail} className="mt-8 flex flex-col gap-3">
         <label className="text-label text-muted flex flex-col gap-1">
           Email
@@ -164,21 +112,6 @@ export function AuthForm({
           className="bg-accent text-body text-bg focus-visible:outline-accent rounded px-4 py-2 font-medium transition-opacity duration-150 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60"
         >
           {pending ? "One moment…" : isSignup ? "Create account" : "Log in"}
-        </button>
-        <button
-          type="button"
-          disabled={pending}
-          aria-busy={pending}
-          onClick={(e) => {
-            // Check only the email field; submitting would demand a password.
-            const input = e.currentTarget.form?.elements.namedItem("email");
-            if (input instanceof HTMLInputElement && input.reportValidity()) {
-              void onMagicLink(input.value);
-            }
-          }}
-          className="border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60"
-        >
-          {pending ? "One moment…" : "Email me a link instead"}
         </button>
       </form>
 

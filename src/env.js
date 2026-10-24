@@ -14,13 +14,6 @@ export const env = createEnv({
     BETTER_AUTH_URL: z.string().url().default("http://localhost:3000"),
     GOOGLE_CLIENT_ID: z.string(),
     GOOGLE_CLIENT_SECRET: z.string(),
-    // Required in production: without it, login links are printed to the
-    // server log instead of mailed.
-    RESEND_API_KEY:
-      process.env.NODE_ENV === "production"
-        ? z.string()
-        : z.string().optional(),
-    EMAIL_FROM: z.string().default("Stash <onboarding@resend.dev>"),
     DATABASE_URL: z.string().url(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
@@ -45,8 +38,6 @@ export const env = createEnv({
     BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
-    RESEND_API_KEY: process.env.RESEND_API_KEY,
-    EMAIL_FROM: process.env.EMAIL_FROM,
     DATABASE_URL: process.env.DATABASE_URL,
     NODE_ENV: process.env.NODE_ENV,
   },
