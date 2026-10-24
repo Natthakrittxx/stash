@@ -18,7 +18,7 @@ The job: get something out of my head and into a place I trust, then find it aga
 
 ## Product Purpose
 
-Stash saves things for later and makes them findable again. Auth exists so a stash follows you across devices and can be shared with a few people, not so it can be published.
+Stash saves things for later and makes them findable again. Auth exists so a stash follows you across devices and stays yours. A stash is private: there is no sharing and nothing is published.
 
 Success is measured by re-visits, not saves. Anyone can build a place where things go in; the product is whether they come back out. A stash that only accumulates has failed, no matter how pleasant the saving felt.
 
@@ -28,7 +28,7 @@ _(Inferred from the Are.na reference and the anti-references — overwrite freel
 
 **Quiet, archival, typographic.**
 
-The interface recedes; the saved thing is what you look at. Voice is plain and unhurried, closer to a library card than a product notification. No cheerleading, no streaks, no "you're on a roll!". Sharing is a quiet act between people who know each other — never a feed, never an audience, no likes or follower counts.
+The interface recedes; the saved thing is what you look at. Voice is plain and unhurried, closer to a library card than a product notification. No cheerleading, no streaks, no "you're on a roll!". A stash is private — never a feed, never an audience, no likes or follower counts.
 
 Emotional goal: trust. The user should feel that anything put here will still be here, and still be findable, in three years.
 
@@ -43,7 +43,7 @@ Emotional goal: trust. The user should feel that anything put here will still be
 1. **Capture costs nothing.** Saving is a reflex, not a task. Any friction at the moment of capture — a modal, a required field, a category picker — kills the habit the product depends on.
 2. **The content is the interface.** Chrome earns its pixels or disappears. What was saved should be legible before anything the app wrapped around it.
 3. **Re-finding is the product.** Search, filtering, and browsing get the design effort that a lesser tool spends on the save button. A stash you can't search is a landfill.
-4. **Shared, not social.** Sharing serves a handful of people who already trust each other. No feeds, no engagement mechanics, no audience.
+4. **Private, not social.** A stash belongs to one person. No sharing, no feeds, no engagement mechanics, no audience.
 5. **Density is earned.** Dense when it genuinely informs — a long list you're scanning. Never dense to look serious.
 
 ## Accessibility & Inclusion

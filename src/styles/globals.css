@@ -5,6 +5,9 @@
   --color-bg: #f5f7f7;
   --color-surface: #e7ebeb;
   --color-border: #d3dad9;
+  /* Field boundaries. The hairline above is for dividers; an input's edge is
+     the only cue it is there, so it clears 3:1 (WCAG 1.4.11) on bg and surface. */
+  --color-field: #778482;
   --color-ink: #14181a; /* 17:1 on bg */
   --color-muted: #5a6462; /* 5.5:1 on bg */
   --color-accent: #005f66; /* 7.0:1 on bg — enamel, not sage */
@@ -68,6 +71,7 @@
        theme's deliberate sub-3:1 choice; the focus ring and placeholder carry
        component identity. Raise both toward 3:1 together if 1.4.11 is enforced. */
     --color-border: #33413f;
+    --color-field: #5f6e6c; /* 3.5:1 on bg, 3.1:1 on surface */
     --color-ink: #e9eeed; /* 15.9:1 on bg */
     --color-muted: #9ba9a7; /* 7.6:1 on bg */
     --color-accent: #4bc3cc; /* 8.8:1 on bg; dark text on fill 8.8:1 */
@@ -80,6 +84,7 @@
   --color-bg: #0e1413;
   --color-surface: #172020;
   --color-border: #33413f;
+  --color-field: #5f6e6c;
   --color-ink: #e9eeed;
   --color-muted: #9ba9a7;
   --color-accent: #4bc3cc;
@@ -120,4 +125,3 @@ html {
     animation-duration: 0.01ms !important;
   }
 }
-

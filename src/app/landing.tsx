@@ -165,7 +165,7 @@ function Demo() {
           aria-describedby="demo-status"
           autoComplete="off"
           spellCheck={false}
-          className={`border-border bg-bg text-title text-ink placeholder:text-muted w-full rounded border py-2.5 pr-10 pl-3 ${focusRing}`}
+          className={`border-field bg-bg text-title text-ink placeholder:text-muted w-full rounded border py-2.5 pr-10 pl-3 ${focusRing}`}
         />
         {!query && (
           <kbd

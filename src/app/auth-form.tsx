@@ -91,7 +91,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
             type="email"
             required
             autoComplete="email"
-            className="border-border bg-bg text-body text-ink focus-visible:border-accent focus-visible:outline-accent rounded border px-3 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="border-field bg-bg text-body text-ink focus-visible:border-accent focus-visible:outline-accent rounded border px-3 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
           />
         </label>
         <label className="text-label text-muted flex flex-col gap-1">
@@ -102,7 +102,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
             required
             minLength={8}
             autoComplete={isSignup ? "new-password" : "current-password"}
-            className="border-border bg-bg text-body text-ink focus-visible:border-accent focus-visible:outline-accent rounded border px-3 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="border-field bg-bg text-body text-ink focus-visible:border-accent focus-visible:outline-accent rounded border px-3 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
           />
         </label>
         <button

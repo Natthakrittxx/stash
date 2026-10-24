@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 
-import { text } from "~/form";
+import { text, titleOr } from "~/form";
 import { getSession } from "~/server/better-auth/server";
 import { db } from "~/server/db";
 import { items } from "~/server/db/schema";
@@ -27,7 +27,10 @@ const urlField = z
     try {
       return normalizeUrl(value);
     } catch {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "That isn't a URL." });
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "That isn't a URL.",
+      });
       return z.NEVER;
     }
   });
@@ -44,7 +47,7 @@ const tagsField = z
   .pipe(z.array(z.string().max(32)));
 
 const shared = {
-  title: z.string().trim().min(1, "A title is required.").max(200),
+  title: z.string().trim().max(200),
   description: z.string().trim().max(2000),
   tags: tagsField,
 };
@@ -78,7 +81,11 @@ function parse(formData: FormData) {
 function toRow(data: z.infer<typeof itemSchema>) {
   return {
     kind: data.kind,
-    title: data.title,
+    title: titleOr(
+      data.title,
+      data.kind === "tool" ? data.url : null,
+      data.kind === "formula" ? data.cmd : null,
+    ),
     description: data.description,
     tags: data.tags,
     url: data.kind === "tool" ? data.url : null,
@@ -124,7 +131,9 @@ export async function createItem(formData: FormData): Promise<Result> {
 
   const parsed = parse(formData);
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "That didn't validate." };
+    return {
+      error: parsed.error.issues[0]?.message ?? "That didn't validate.",
+    };
   }
 
   // ponytail: a count query is the whole rate limiter. No Redis, no in-memory
@@ -168,7 +177,9 @@ export async function updateItem(
 
   const parsed = parse(formData);
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "That didn't validate." };
+    return {
+      error: parsed.error.issues[0]?.message ?? "That didn't validate.",
+    };
   }
 
   const row = toRow(parsed.data);

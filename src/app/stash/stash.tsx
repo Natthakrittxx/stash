@@ -12,7 +12,7 @@ import {
 } from "react";
 import { useFormStatus } from "react-dom";
 
-import { text } from "~/form";
+import { text, titleOr } from "~/form";
 import { authClient } from "~/server/better-auth/client";
 import type { items } from "~/server/db/schema";
 
@@ -60,7 +60,11 @@ function draftFrom(formData: FormData, id: string, userId: string): Item {
     id,
     userId,
     kind,
-    title: text(formData, "title"),
+    title: titleOr(
+      text(formData, "title").trim(),
+      kind === "tool" ? text(formData, "url") : null,
+      kind === "formula" ? text(formData, "cmd") : null,
+    ),
     url: kind === "tool" ? text(formData, "url") : null,
     cmd: kind === "formula" ? text(formData, "cmd") : null,
     // The server resolves the real preview and revalidates; until then the row
@@ -89,11 +93,12 @@ function formDataOf(item: Item): FormData {
 
 const focusRing =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
-const field = `w-full rounded border border-border bg-bg px-3 py-2 text-body text-ink placeholder:text-muted ${focusRing}`;
+const fieldLabel = "flex flex-col gap-1 text-label text-ink";
+const field = `w-full rounded border border-field bg-bg px-3 py-2 text-body text-ink placeholder:text-muted ${focusRing}`;
 // Search is the product's core act ("re-finding is the product"), so it reads a
 // step larger than the composer fields — the one input that leads. pr-10 keeps a
 // gutter for the idle `/` hint (and the native search-clear once you type).
-const search = `w-full rounded border border-border bg-bg py-2.5 pr-10 pl-3 text-title text-ink placeholder:text-muted ${focusRing}`;
+const search = `w-full rounded border border-field bg-bg py-2.5 pr-10 pl-3 text-title text-ink placeholder:text-muted ${focusRing}`;
 
 // One selected treatment for every segmented control (kind tabs, composer
 // tool/formula toggle): accent fill (`bg-accent text-bg`) plus a reserved ✓ slot
@@ -104,7 +109,7 @@ const segmentOff = "text-muted hover:text-ink";
 
 // Sidebar section label. Left padding matches the filter rows' so the heading
 // sits flush with the labels beneath it.
-const railHeading = "px-2.5 text-label font-medium text-muted lg:px-2";
+const railHeading = "px-2 text-label font-medium text-muted";
 
 // Tailwind's lg breakpoint (64rem). It gates the master–detail split: at or
 // above it there's room for a preview pane beside the list, so rows become lean
@@ -143,8 +148,29 @@ export function Stash({
 
   const wide = useWide();
 
+  // Desktop rail open/collapsed, remembered per browser. Mobile uses the
+  // drawer instead, opened on demand.
+  // ponytail: read after mount, so a stored "collapsed" shows the rail for one
+  // frame. Move to a cookie read on the server if that flash ever bothers.
+  const [railOpen, setRailOpen] = useState(true);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("rail") === "closed") setRailOpen(false);
+    } catch {}
+  }, []);
+  const drawerRef = useRef<HTMLDialogElement>(null);
+
+  function toggleFilters() {
+    if (!wide) return drawerRef.current?.showModal();
+    const next = !railOpen;
+    setRailOpen(next);
+    try {
+      localStorage.setItem("rail", next ? "open" : "closed");
+    } catch {}
+  }
+
   const searchRef = useRef<HTMLInputElement>(null);
-  const titleRef = useRef<HTMLInputElement>(null);
+  const firstRef = useRef<HTMLElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const undoRef = useRef<HTMLButtonElement>(null);
   // The desktop preview pane. Enter on a selected row jumps focus here, to the
@@ -159,7 +185,7 @@ export function Stash({
     returnFocus.current = document.activeElement as HTMLElement | null;
     setEditing(item);
     setComposerOpen(true);
-    requestAnimationFrame(() => titleRef.current?.focus());
+    requestAnimationFrame(() => firstRef.current?.focus());
   }
 
   function closeComposer() {
@@ -180,7 +206,21 @@ export function Stash({
   // Send it to the Undo button — the announced, immediate next action.
   useEffect(() => {
     if (undo) undoRef.current?.focus();
+    setUndoHeld(false); // a fresh offer starts its own clock
   }, [undo]);
+
+  // The undo offer lapses after 8s, held open while the pointer rests on it.
+  // Focus sits on Undo by then, so hand it to search rather than <body>.
+  const [undoHeld, setUndoHeld] = useState(false);
+  useEffect(() => {
+    if (!undo || undoHeld) return;
+    const t = setTimeout(() => {
+      if (document.activeElement === undoRef.current)
+        searchRef.current?.focus();
+      setUndo(null);
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [undo, undoHeld]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -255,6 +295,20 @@ export function Stash({
   // one so a selection is always clearable even after a search excludes it.
   const railTags = allTags.filter(
     (t) => (tagCounts.get(t) ?? 0) > 0 || t === activeTag,
+  );
+
+  const activeFilters = (tab === "all" ? 0 : 1) + (activeTag ? 1 : 0);
+
+  const rail = (
+    <FilterRail
+      tab={tab}
+      onTab={setTab}
+      kindCounts={kindCounts}
+      tags={railTags}
+      tagCounts={tagCounts}
+      activeTag={activeTag}
+      onTag={setActiveTag}
+    />
   );
 
   const visible = useMemo(
@@ -370,44 +424,96 @@ export function Stash({
       </header>
 
       <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:gap-10">
-        <FilterRail
-          tab={tab}
-          onTab={setTab}
-          kindCounts={kindCounts}
-          tags={railTags}
-          tagCounts={tagCounts}
-          activeTag={activeTag}
-          onTag={setActiveTag}
-        />
+        {/* One rail, two homes: a collapsible column on desktop, a slide-in
+            drawer below lg. Rendered in exactly one so its ids stay unique. */}
+        {wide && railOpen && (
+          <aside id="filters" className="w-52 shrink-0">
+            {/* ponytail: sticky pins the rail; a list taller than the viewport
+                just scrolls with the page. Add internal overflow only if a
+                stash ever grows hundreds of tags. */}
+            <div className="sticky top-10">{rail}</div>
+          </aside>
+        )}
+        {!wide && (
+          <dialog
+            ref={drawerRef}
+            id="filters"
+            aria-labelledby="filters-title"
+            // A click that lands on the dialog itself hit the backdrop.
+            onClick={(e) =>
+              e.target === e.currentTarget && e.currentTarget.close()
+            }
+            className="bg-bg text-ink border-border m-0 h-dvh max-h-none w-72 max-w-[85vw] border-r p-0 backdrop:bg-black/40"
+          >
+            <div className="flex h-full flex-col gap-6 overflow-y-auto p-4">
+              <div className="flex items-center justify-between">
+                <h2
+                  id="filters-title"
+                  className="text-title text-ink font-serif"
+                >
+                  Filters
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => drawerRef.current?.close()}
+                  className={`text-label text-muted hover:text-ink rounded px-2 py-2 ${focusRing}`}
+                >
+                  Done
+                </button>
+              </div>
+              {rail}
+            </div>
+          </dialog>
+        )}
 
         <main className="min-w-0 flex-1">
-          <div className="relative">
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search titles, descriptions, commands, tags…"
-              aria-label="Search your stash"
-              className={search}
-            />
-            {/* Idle-only shortcut hint. Hidden once you type (native clear takes
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={toggleFilters}
+              aria-controls="filters"
+              aria-expanded={wide ? railOpen : undefined}
+              className={`border-field text-label text-muted hover:text-ink flex shrink-0 items-center gap-2 rounded border px-3 transition-colors duration-150 ${focusRing}`}
+            >
+              <PanelIcon />
+              <span>{wide && railOpen ? "Hide filters" : "Filters"}</span>
+              {/* Collapsed or in the drawer, the rail can't show what's on, so the
+                button does: a count, never color alone. */}
+              {activeFilters > 0 && (
+                <span className="bg-accent text-bg rounded px-1.5 tabular-nums">
+                  {activeFilters}
+                  <span className="sr-only"> active</span>
+                </span>
+              )}
+            </button>
+            <div className="relative min-w-0 flex-1">
+              <input
+                ref={searchRef}
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search titles, descriptions, commands, tags…"
+                aria-label="Search your stash"
+                className={search}
+              />
+              {/* Idle-only shortcut hint. Hidden once you type (native clear takes
                 the gutter) and on touch, where there's no `/` to press. */}
-            {!query && (
-              <kbd
-                aria-hidden="true"
-                className="border-border text-label text-muted pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded border px-1.5 py-0.5 sm:block"
-              >
-                /
-              </kbd>
-            )}
+              {!query && (
+                <kbd
+                  aria-hidden="true"
+                  className="border-border text-label text-muted pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded border px-1.5 py-0.5 sm:block"
+                >
+                  /
+                </kbd>
+              )}
+            </div>
           </div>
 
           <Composer
             open={composerOpen}
             editing={editing}
             error={error}
-            titleRef={titleRef}
+            firstRef={firstRef}
             triggerRef={triggerRef}
             onOpen={() => openComposer()}
             onCancel={closeComposer}
@@ -497,41 +603,46 @@ export function Stash({
 
       {/* Delete and undo run with the composer closed, where its inline error
           banner never renders. Surface those failures here instead. */}
-      {error && !composerOpen && (
-        <div
-          role="alert"
-          className="border-border bg-surface fixed inset-x-4 bottom-4 mx-auto flex max-w-sm items-center justify-between gap-4 rounded border px-4 py-3 shadow-lg"
-        >
-          <span className="text-label text-danger">
-            <span aria-hidden="true">✕ </span>
-            {error}
-          </span>
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            className={`text-label text-accent font-semibold underline underline-offset-2 ${focusRing}`}
+      {/* One stack, so an error and the undo offer never cover each other. */}
+      <div className="fixed inset-x-4 bottom-4 mx-auto flex max-w-sm flex-col gap-2">
+        {error && !composerOpen && (
+          <div
+            role="alert"
+            className="border-border bg-surface flex items-center justify-between gap-4 rounded border px-4 py-3 shadow-lg"
           >
-            Dismiss
-          </button>
-        </div>
-      )}
+            <span className="text-label text-danger">
+              <span aria-hidden="true">✕ </span>
+              {error}
+            </span>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              className={`text-label text-accent font-semibold underline underline-offset-2 ${focusRing}`}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
-      {undo && (
-        <div
-          role="status"
-          className="border-border bg-surface fixed inset-x-4 bottom-4 mx-auto flex max-w-sm items-center justify-between gap-4 rounded border px-4 py-3 shadow-lg"
-        >
-          <span className="text-label text-ink">Deleted “{undo.title}”</span>
-          <button
-            ref={undoRef}
-            type="button"
-            onClick={() => onUndo(undo)}
-            className={`text-label text-accent font-semibold underline underline-offset-2 ${focusRing}`}
+        {undo && (
+          <div
+            role="status"
+            onPointerEnter={() => setUndoHeld(true)}
+            onPointerLeave={() => setUndoHeld(false)}
+            className="border-border bg-surface flex items-center justify-between gap-4 rounded border px-4 py-3 shadow-lg"
           >
-            Undo
-          </button>
-        </div>
-      )}
+            <span className="text-label text-ink">Deleted “{undo.title}”</span>
+            <button
+              ref={undoRef}
+              type="button"
+              onClick={() => onUndo(undo)}
+              className={`text-label text-accent font-semibold underline underline-offset-2 ${focusRing}`}
+            >
+              Undo
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -581,7 +692,7 @@ function KindTabs({
     <div
       role="tablist"
       aria-labelledby={labelledBy}
-      className="mt-1.5 flex flex-wrap gap-1 lg:flex-col lg:gap-0.5"
+      className="mt-1.5 flex flex-col gap-0.5"
     >
       {kinds.map(({ value, label }, i) => {
         const on = tab === value;
@@ -599,7 +710,7 @@ function KindTabs({
             tabIndex={on ? 0 : -1}
             onClick={() => onTab(value)}
             onKeyDown={(e) => onKeyDown(e, i)}
-            className={`${segment} flex items-center gap-1.5 lg:w-full lg:justify-between lg:px-2 lg:py-1.5 ${
+            className={`text-label rounded transition-colors duration-150 ${focusRing} flex w-full items-center justify-between gap-1.5 px-2 py-2.5 lg:py-1.5 ${
               on ? "bg-accent text-bg" : segmentOff
             }`}
           >
@@ -649,50 +760,45 @@ function FilterRail({
   onTag: (tag: string | null) => void;
 }) {
   return (
-    <aside className="lg:w-52 lg:shrink-0">
-      {/* ponytail: sticky pins the rail; a list taller than the viewport just
-          scrolls with the page. Add internal overflow only if a stash ever grows
-          hundreds of tags. */}
-      <nav className="flex flex-col gap-6 lg:sticky lg:top-10">
-        <div>
-          <h2 id="rail-kind" className={railHeading}>
-            Kind
-          </h2>
-          <KindTabs
-            tab={tab}
-            onTab={onTab}
-            counts={kindCounts}
-            labelledBy="rail-kind"
-          />
-        </div>
+    <nav aria-label="Filters" className="flex flex-col gap-6">
+      <div>
+        <h2 id="rail-kind" className={railHeading}>
+          Kind
+        </h2>
+        <KindTabs
+          tab={tab}
+          onTab={onTab}
+          counts={kindCounts}
+          labelledBy="rail-kind"
+        />
+      </div>
 
-        {tags.length > 0 && (
-          <div>
-            <h2 id="rail-tags" className={railHeading}>
-              Tags
-            </h2>
-            <div
-              role="group"
-              aria-labelledby="rail-tags"
-              className="mt-1.5 flex flex-wrap gap-1 lg:flex-col lg:gap-0.5"
-            >
-              {tags.map((tag) => {
-                const on = activeTag === tag;
-                return (
-                  <FilterRow
-                    key={tag}
-                    label={tag}
-                    count={tagCounts.get(tag) ?? 0}
-                    active={on}
-                    onClick={() => onTag(on ? null : tag)}
-                  />
-                );
-              })}
-            </div>
+      {tags.length > 0 && (
+        <div>
+          <h2 id="rail-tags" className={railHeading}>
+            Tags
+          </h2>
+          <div
+            role="group"
+            aria-labelledby="rail-tags"
+            className="mt-1.5 flex flex-col gap-0.5"
+          >
+            {tags.map((tag) => {
+              const on = activeTag === tag;
+              return (
+                <FilterRow
+                  key={tag}
+                  label={tag}
+                  count={tagCounts.get(tag) ?? 0}
+                  active={on}
+                  onClick={() => onTag(on ? null : tag)}
+                />
+              );
+            })}
           </div>
-        )}
-      </nav>
-    </aside>
+        </div>
+      )}
+    </nav>
   );
 }
 
@@ -716,7 +822,7 @@ function FilterRow({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`text-label flex items-center gap-1.5 rounded px-2.5 py-1 transition-colors duration-150 lg:w-full lg:justify-between lg:px-2 lg:py-1.5 ${focusRing} ${
+      className={`text-label flex w-full items-center justify-between gap-1.5 rounded px-2 py-2.5 transition-colors duration-150 lg:py-1.5 ${focusRing} ${
         active
           ? "bg-accent text-bg"
           : "text-muted hover:bg-surface hover:text-ink"
@@ -741,7 +847,7 @@ function Composer({
   open,
   editing,
   error,
-  titleRef,
+  firstRef,
   triggerRef,
   onOpen,
   onCancel,
@@ -750,7 +856,7 @@ function Composer({
   open: boolean;
   editing: Item | null;
   error: string | null;
-  titleRef: React.RefObject<HTMLInputElement | null>;
+  firstRef: React.RefObject<HTMLElement | null>;
   triggerRef: React.RefObject<HTMLButtonElement | null>;
   onOpen: () => void;
   onCancel: () => void;
@@ -816,56 +922,81 @@ function Composer({
         ))}
       </div>
 
-      <input
-        ref={titleRef}
-        name="title"
-        required
-        maxLength={200}
-        defaultValue={editing?.title}
-        placeholder="Title"
-        aria-label="Title"
-        className={field}
-      />
-
+      {/* The thing you paste comes first and takes focus: capture costs
+          nothing. Title is optional; the server falls back to the host or the
+          command. Visible labels, so a half-filled form still says what each
+          field is. */}
       {kind === "tool" ? (
-        <input
-          name="url"
-          required
-          maxLength={2048}
-          defaultValue={editing?.url ?? ""}
-          placeholder="ripgrep.dev"
-          aria-label="URL"
-          className={`${field} font-mono`}
-        />
+        <label className={fieldLabel}>
+          URL
+          <input
+            ref={(el) => {
+              firstRef.current = el;
+            }}
+            name="url"
+            required
+            maxLength={2048}
+            defaultValue={editing?.url ?? ""}
+            placeholder="ripgrep.dev"
+            className={`${field} font-mono`}
+          />
+        </label>
       ) : (
-        <textarea
-          name="cmd"
-          required
-          rows={2}
-          maxLength={8000}
-          defaultValue={editing?.cmd ?? ""}
-          placeholder="rg -i --hidden 'TODO'"
-          aria-label="Command"
-          className={`${field} font-mono`}
-        />
+        <label className={fieldLabel}>
+          Command
+          <textarea
+            ref={(el) => {
+              firstRef.current = el;
+            }}
+            name="cmd"
+            required
+            rows={2}
+            maxLength={8000}
+            defaultValue={editing?.cmd ?? ""}
+            placeholder="rg -i --hidden 'TODO'"
+            className={`${field} font-mono`}
+          />
+        </label>
       )}
 
-      <input
-        name="description"
-        maxLength={2000}
-        defaultValue={editing?.description}
-        placeholder="What it's for"
-        aria-label="Description"
-        className={field}
-      />
+      <label className={fieldLabel}>
+        <span>
+          Title <span className="text-muted">(optional)</span>
+        </span>
+        <input
+          name="title"
+          maxLength={200}
+          defaultValue={editing?.title}
+          placeholder={
+            kind === "tool" ? "Defaults to the site" : "Defaults to the command"
+          }
+          className={field}
+        />
+      </label>
 
-      <input
-        name="tags"
-        defaultValue={editing?.tags.join(", ")}
-        placeholder="tags, comma, separated"
-        aria-label="Tags, comma separated"
-        className={field}
-      />
+      <label className={fieldLabel}>
+        <span>
+          What it&apos;s for <span className="text-muted">(optional)</span>
+        </span>
+        <input
+          name="description"
+          maxLength={2000}
+          defaultValue={editing?.description}
+          className={field}
+        />
+      </label>
+
+      <label className={fieldLabel}>
+        <span>
+          Tags <span className="text-muted">(optional, comma separated)</span>
+        </span>
+        <input
+          name="tags"
+          defaultValue={editing?.tags.join(", ")}
+          placeholder="git, ssh"
+          className={field}
+        />
+      </label>
 
       {error && (
         <p role="alert" className="text-label text-danger">
@@ -1277,7 +1408,7 @@ function CommandBlock({ cmd }: { cmd: string }) {
       <button
         type="button"
         onClick={copy}
-        aria-label={`Copy command: ${cmd}`}
+        aria-label="Copy command"
         className={`text-label shrink-0 rounded px-1.5 py-0.5 ${focusRing} ${
           state === "copied"
             ? "text-accent"
@@ -1294,6 +1425,15 @@ function CommandBlock({ cmd }: { cmd: string }) {
             ? "✕ Failed"
             : "Copy"}
       </button>
+      {/* The label stays short (no 8000-char command read aloud); this live
+          region is what tells a screen reader the copy happened. */}
+      <span role="status" className="sr-only">
+        {state === "copied"
+          ? "Copied"
+          : state === "failed"
+            ? "Copy failed"
+            : ""}
+      </span>
     </div>
   );
 }
@@ -1407,18 +1547,29 @@ export function CopyButton({
         : "text-term-muted hover:text-term-ink";
 
   return (
-    <button
-      type="button"
-      onClick={copy}
-      aria-label={`Copy command: ${text}`}
-      className={`${tone} ${className}`}
-    >
-      {state === "copied"
-        ? "✓ Copied"
-        : state === "failed"
-          ? "✕ Failed"
-          : "Copy"}
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Copy command"
+        className={`${tone} ${className}`}
+      >
+        {state === "copied"
+          ? "✓ Copied"
+          : state === "failed"
+            ? "✕ Failed"
+            : "Copy"}
+      </button>
+      {/* The label stays short (no 8000-char command read aloud); this live
+            region is what tells a screen reader the copy happened. */}
+      <span role="status" className="sr-only">
+        {state === "copied"
+          ? "Copied"
+          : state === "failed"
+            ? "Copy failed"
+            : ""}
+      </span>
+    </>
   );
 }
 
@@ -1503,5 +1654,25 @@ function FormulaCard({
         )}
       </div>
     </li>
+  );
+}
+
+// A panel with its left column: the filter rail, open or tucked away.
+function PanelIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+    </svg>
   );
 }
