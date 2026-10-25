@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "src/app/stash/stash.tsx"
+        ],
+        "createdAt": "2026-10-25T07:37:00.960Z",
+        "reason": "Assessment B + audit verified: <img src={item.image}> is dynamic, rendered only when item.image && !broken, onError falls back to the monogram tile"
+      }
+    ]
+  }
+}

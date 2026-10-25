@@ -8,6 +8,7 @@ colors:
   bg: "#f5f7f7"
   surface: "#e7ebeb"
   border: "#d3dad9"
+  field: "#778482"
   danger: "#b02a37"
   accent-dark: "#4bc3cc"
   ink-dark: "#e9eeed"
@@ -15,8 +16,9 @@ colors:
   bg-dark: "#0e1413"
   surface-dark: "#172020"
   border-dark: "#33413f"
+  field-dark: "#5f6e6c"
   danger-dark: "#f0a0a8"
-  term-bg: "#0e1413"
+  term-bg: "#080c0c"
   term-surface: "#172020"
   term-border: "#33413f"
   term-ink: "#e9eeed"
@@ -162,7 +164,7 @@ Cool paper, near-black ink, and one enamel teal; the dark theme inverts the ramp
 - **Wine** (danger / danger-dark): destructive actions on hover, error messages, failed copy. Always paired with a mark or the word, never color alone.
 
 ### Terminal (fixed)
-- **Console** (term-bg, term-surface, term-border, term-ink, term-muted, term-accent, term-danger): the formula card's palette. Pinned to the dark-theme values so the card never flips with the app theme. term-accent marks the prompt and a successful copy.
+- **Console** (term-bg, term-surface, term-border, term-ink, term-muted, term-accent, term-danger): the formula card's palette. Pinned to the dark-theme values so the card never flips with the app theme; term-bg sits a step below the dark page ground so the console still reads as a recessed well in the dark theme. term-accent marks the prompt and a successful copy.
 
 ### Named Rules
 **The One Enamel Rule.** Teal is the only hue that means "active" or "go". Anything selected, primary, focused, or linked is teal; nothing decorative is.
@@ -229,31 +231,34 @@ Small, quiet corners. Controls, inputs, tiles, the composer, and toasts share a 
 ### Segmented controls and filter rows
 - **Style:** label-size text, 4px by 10px, 4px radius. Off: muted text, ink on hover (filter rows also take the surface ground on hover).
 - **On:** teal fill with background-colored text plus a check mark in a slot reserved in both states, so selection never reflows and never rides on color alone. Weight does not change.
-- **Filter rail:** inline pills on mobile; full-width rows with a right-aligned tabular count from lg. Shared by kind tabs, the composer's tool/formula toggle, and tag filters.
+- **Filter rail:** inline pills on mobile; full-width rows with a right-aligned tabular count from lg. Shared by kind tabs, the composer's tool/formula toggle, and tag filters. Past 12 tags the list shows the 10 most used (plus the active one) behind a "Show all N tags" text toggle. Hidden entirely on an empty stash.
 
 ### Inputs / Fields
-- **Field:** background-colored fill, 1px hairline, 4px radius, 8px by 12px, body text, muted placeholder.
-- **Search:** the one input that leads. A step larger (title size, 10px vertical) with a 40px right gutter for the idle `/` key hint, shown as a hairline-boxed label-size kbd.
+- **Field:** background-colored fill, 1px field-token edge (3:1 against bg and surface; the hairline is for dividers only), 4px radius, 8px by 12px, body text, muted placeholder.
+- **Search:** the one input that leads. A step larger (title size, 10px vertical) with a 40px right gutter for the idle `/` key hint, shown as a hairline-boxed label-size kbd. Its clear button is redrawn in muted (ink on hover). Beneath it, a muted label-size result line, a polite live region: "14 things saved" at rest, "3 matches for “git” in Tools tagged ssh" while filtering, with a teal Clear link.
 - **Focus:** teal outline as above.
-- **Error:** wine label text with a mark, announced as an alert.
+- **Error:** wine label text with a mark, announced as an alert. The field it names takes a wine edge and aria-invalid, and receives focus. A failed submit never clears what was typed.
+- **Touch:** on coarse pointers, small controls grow to a 44px hit area; keyboard hints (`/`, `a`, "Esc to close") are hidden.
 
 ### Tool row
-- **Structure:** a 112 by 64px tile (og:image, object-contain on the surface ground; a serif monogram as fallback; a mono `$_` for formulae), then a serif title truncated on one line with the host in muted label text beside it, tags beneath in muted label text.
+- **Structure:** a 112 by 64px tile (64 by 36 below sm; og:image, object-contain on the surface ground; a serif monogram as fallback), then a serif title with the host in muted label text, tags beneath in muted label text. The host is omitted when it is the title. Desktop rows (selectors for the pane) truncate the title on one line with the host beside it; narrow rows let the title wrap to two lines with the host on its own line, and put Edit/Delete under the text on phones so the title keeps the width.
 - **States:** hover and selection take the surface ground; the selected row's title goes semibold and a chevron appears in teal at the trailing edge, with aria-current carrying it to assistive tech.
 - **Row actions:** hidden until row hover or focus on hover-capable pointers; always visible on touch.
 
 ### Formula card (signature)
-- **Material:** the pinned console. 8px radius, terminal hairline border. A term-surface title bar with three round dots and the title in mono muted label text; a term-bg body with a teal prompt, the command in mono body text (scrolls horizontally, never wraps), a Copy control, and the description and tags as mono comments (`#`).
+- **Material:** the pinned console. 8px radius, terminal hairline border. A term-surface title bar with three round dots and the title in mono muted label text (omitted when it only repeats the command; Edit/Delete wrap beneath it when narrow); a term-bg body with a teal prompt, the command in mono body text (scrolls horizontally, never wraps; the edge with more to scroll fades), a Copy control, and the description and tags as mono comments (`#`).
 - **Copy:** muted "Copy" turns into term-accent "Copied" or term-danger "Failed" with a mark for two seconds.
 
 ### Detail pane
-- **Structure:** sticky 24rem column from lg. A full-width tile at about 1.9:1, the title in display serif, then actions. Commands here sit in a surface-ground block in theme colors with the same copy control.
+- **Structure:** sticky 24rem column from lg. A full-width tile at about 1.9:1, the title in display serif, then actions. Tools only: formulae already show everything in their card. When no tool is showing the column stays reserved, so the list never jumps wider. Esc returns focus to the selected row.
 
 ### Composer
 - **Style:** a surface panel with hairline border, 4px radius, 16px padding, stacking the tool/formula segment, fields, and a primary button with 12px gaps.
+- **Draft:** closing an unsaved new item keeps it; the next open restores it with a muted "Your unsaved draft." and a Discard link.
 
 ### Toast
 - **Style:** fixed to the bottom center, max 24rem, surface ground, hairline, 4px radius, 12px by 16px, the toast float shadow. Errors carry a wine mark and text.
+- **Kinds:** error (alert, Dismiss), undo (8s, held while hovered or keyboard-focused), saved receipt ("✓ Saved “title”", 4s, no action).
 
 ### Landing demo frame
 - **Style:** an 8px-radius hairline frame (16px padding, 24px from sm) holding the app's search field, a polite live status line, and the app's Tools and Formulae sections, each headed by a semibold label with a muted count over a hairline.

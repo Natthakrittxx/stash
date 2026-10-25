@@ -1,10 +1,7 @@
-import { redirect } from "next/navigation";
-
 import { Landing } from "~/app/landing";
-import { getSession } from "~/server/better-auth/server";
 
-// Logged-in users fork straight to their stash; everyone else meets the landing.
-export default async function Home() {
-  if (await getSession()) redirect("/stash");
+// Static: src/middleware.ts forks logged-in visitors to /stash before this
+// renders, so anonymous visitors get the landing straight from the CDN.
+export default function Home() {
   return <Landing />;
 }

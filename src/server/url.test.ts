@@ -24,3 +24,15 @@ test("rejects things that are not URLs", () => {
   expect(() => normalizeUrl("javascript:alert(1)")).toThrow();
   expect(() => normalizeUrl("")).toThrow();
 });
+
+test("rejects hosts that can't be a real site", () => {
+  expect(() => normalizeUrl("ripgrep")).toThrow();
+  expect(() => normalizeUrl("ht!tp://")).toThrow();
+  expect(() => normalizeUrl("https://.com")).toThrow();
+});
+
+test("accepts localhost and IP literals", () => {
+  expect(normalizeUrl("localhost:3000")).toBe("https://localhost:3000/");
+  expect(normalizeUrl("http://192.168.1.2/x")).toBe("http://192.168.1.2/x");
+  expect(normalizeUrl("http://[::1]:8080")).toBe("http://[::1]:8080/");
+});

@@ -29,7 +29,7 @@ const urlField = z
     } catch {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "That isn't a URL.",
+        message: "That isn't a web address. Try something like ripgrep.dev.",
       });
       return z.NEVER;
     }
@@ -61,7 +61,17 @@ const itemSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
-type Result = { error?: string };
+// `field` names the input a validation error belongs to, so the form can mark it
+// invalid; `id` is the saved row, so the list can select what was just added.
+type Result = { error?: string; field?: string; id?: string };
+
+function invalid(error: z.ZodError): Result {
+  const issue = error.issues[0];
+  return {
+    error: issue?.message ?? "That didn't validate.",
+    field: issue?.path[0]?.toString(),
+  };
+}
 
 function parse(formData: FormData) {
   const kind = text(formData, "kind");
@@ -130,11 +140,7 @@ export async function createItem(formData: FormData): Promise<Result> {
   const userId = await requireUserId();
 
   const parsed = parse(formData);
-  if (!parsed.success) {
-    return {
-      error: parsed.error.issues[0]?.message ?? "That didn't validate.",
-    };
-  }
+  if (!parsed.success) return invalid(parsed.error);
 
   // ponytail: a count query is the whole rate limiter. No Redis, no in-memory
   // counter that a cold start or a second region would forget. Swap for a
@@ -163,7 +169,7 @@ export async function createItem(formData: FormData): Promise<Result> {
 
   revalidatePath("/stash");
   if (inserted) resolvePreview(inserted.id, userId, row);
-  return {};
+  return { id: inserted?.id };
 }
 
 export async function updateItem(
@@ -176,11 +182,7 @@ export async function updateItem(
   if (!target.success) return { error: "No such item." };
 
   const parsed = parse(formData);
-  if (!parsed.success) {
-    return {
-      error: parsed.error.issues[0]?.message ?? "That didn't validate.",
-    };
-  }
+  if (!parsed.success) return invalid(parsed.error);
 
   const row = toRow(parsed.data);
   // Keep a tool's existing preview until the fresh one resolves (no flash on an
@@ -199,7 +201,7 @@ export async function updateItem(
 
   revalidatePath("/stash");
   resolvePreview(target.data, userId, row);
-  return {};
+  return { id: target.data };
 }
 
 export async function deleteItem(id: string): Promise<Result> {

@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { CopyButton } from "./copy-button";
 import { GitHubMark, REPO_URL } from "./github-mark";
-import { CopyButton } from "./stash/stash";
 import { StashMark } from "./stash-mark";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -79,13 +79,17 @@ const focusRing =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const primary = `bg-accent text-body text-bg rounded px-4 py-2 transition-opacity duration-150 hover:opacity-90 ${focusRing}`;
 
-// Same fields the real search reads: title, description, command, tags.
+// Same fields the real search reads: title, description, command, site, tags.
 function matches(s: Sample, q: string) {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
-  return [s.title, s.description, "cmd" in s ? s.cmd : "", ...s.tags].some(
-    (f) => f.toLowerCase().includes(needle),
-  );
+  return [
+    s.title,
+    s.description,
+    "cmd" in s ? s.cmd : "",
+    "url" in s ? s.url : "",
+    ...s.tags,
+  ].some((f) => f.toLowerCase().includes(needle));
 }
 
 // The app's own list, minus edit and delete: a filtered search over tool rows
@@ -160,7 +164,7 @@ function Demo() {
             setQuery(e.target.value);
           }}
           onFocus={() => (touched.current = true)}
-          placeholder="Search titles, descriptions, commands, tags…"
+          placeholder="Search titles, sites, commands…"
           aria-label="Search the sample stash"
           aria-describedby="demo-status"
           autoComplete="off"
@@ -170,7 +174,7 @@ function Demo() {
         {!query && (
           <kbd
             aria-hidden="true"
-            className="border-border text-label text-muted pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded border px-1.5 py-0.5 sm:block"
+            className="border-border text-label text-muted pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded border px-1.5 py-0.5 sm:block pointer-coarse:hidden"
           >
             /
           </kbd>
@@ -245,21 +249,22 @@ function SectionHeading({
   );
 }
 
-// The app's narrow tool row: monogram tile, serif title, host, description, tags.
+// The app's narrow tool row: monogram tile (smaller on phones), serif title,
+// host on its own line, description, tags.
 function ToolRow({ s }: { s: Sample & { url: string } }) {
   return (
-    <li className="flex items-start gap-4 py-4">
+    <li className="flex items-start gap-3 py-4 sm:gap-4">
       <div
         aria-hidden="true"
-        className="border-border bg-surface text-headline text-ink grid h-16 w-28 shrink-0 place-items-center rounded border font-serif"
+        className="border-border bg-surface text-title sm:text-headline text-ink grid h-9 w-16 shrink-0 place-items-center rounded border font-serif sm:h-16 sm:w-28"
       >
         {s.url[0]!.toUpperCase()}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <h4 className="text-title text-ink truncate font-serif">{s.title}</h4>
-          <span className="text-label text-muted shrink-0">{s.url}</span>
-        </div>
+        <h4 className="text-title text-ink line-clamp-2 font-serif break-words">
+          {s.title}
+        </h4>
+        <p className="text-label text-muted truncate">{s.url}</p>
         <p className="text-body text-muted mt-1">{s.description}</p>
         <ul className="text-label text-muted mt-1.5 flex flex-wrap gap-x-2">
           {s.tags.map((t) => (
@@ -274,7 +279,7 @@ function ToolRow({ s }: { s: Sample & { url: string } }) {
 // The app's formula card: always-dark terminal, prompt, command, copy.
 function FormulaCard({ s }: { s: Sample & { cmd: string } }) {
   return (
-    <li className="border-term-border overflow-hidden rounded-lg border">
+    <li className="term border-term-border overflow-hidden rounded-lg border">
       <div className="bg-term-surface flex items-center gap-3 px-3 py-2">
         <span aria-hidden="true" className="flex shrink-0 gap-1.5">
           <span className="bg-term-border size-2.5 rounded-full" />
@@ -293,12 +298,12 @@ function FormulaCard({ s }: { s: Sample & { cmd: string } }) {
           >
             ❯
           </span>
-          <code className="text-body text-term-ink min-w-0 flex-1 overflow-x-auto font-mono leading-relaxed whitespace-pre">
+          <code className="text-body text-term-ink scroll-fade min-w-0 flex-1 overflow-x-auto font-mono leading-relaxed whitespace-pre">
             {s.cmd}
           </code>
           <CopyButton
             text={s.cmd}
-            className="text-label focus-visible:outline-term-accent shrink-0 rounded px-1.5 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="text-label focus-visible:outline-term-accent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 pointer-coarse:min-h-11"
           />
         </div>
         <p className="text-label text-term-muted mt-2 pl-6 font-mono">
@@ -324,7 +329,7 @@ function Start() {
         Already have a stash?{" "}
         <Link
           href="/login"
-          className={`text-accent hover:underline ${focusRing}`}
+          className={`text-accent rounded underline underline-offset-2 ${focusRing}`}
         >
           Log in
         </Link>
@@ -344,7 +349,7 @@ const KINDS = [
   },
   {
     kind: "Search",
-    text: "One box reads titles, descriptions, commands and tags at once. Tag if you like; you never have to.",
+    text: "One box reads titles, sites, descriptions, commands and tags at once. Tag if you like; you never have to.",
   },
 ];
 
@@ -359,7 +364,7 @@ export function Landing() {
         <nav className="flex items-center gap-3">
           <Link
             href="/login"
-            className={`text-label text-muted hover:text-ink rounded px-1 ${focusRing}`}
+            className={`text-label text-muted hover:text-ink inline-flex h-9 items-center rounded px-2 ${focusRing}`}
           >
             Log in
           </Link>

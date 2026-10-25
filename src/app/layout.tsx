@@ -8,14 +8,17 @@ import {
   Source_Serif_4,
 } from "next/font/google";
 
-// Runs before first paint so a stored theme never flashes the OS default.
-const noFlash = `try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}`;
+// Runs before first paint so a stored theme never flashes the OS default. It
+// also records whether the viewport is desktop-wide, so the next /stash render
+// on the server picks the right layout instead of painting the narrow one and
+// swapping after hydration (stash/page.tsx reads it).
+const noFlash = `try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}document.cookie='wide='+(matchMedia('(min-width: 64rem)').matches?1:0)+';path=/;max-age=31536000;samesite=lax';`;
 
 const description =
   "A quiet, typographic place to save things and find them again.";
 
 export const metadata: Metadata = {
-  title: "Stash",
+  title: { default: "Stash", template: "%s · Stash" },
   description,
   icons: [
     // ponytail: SVG-only favicon; add a generated .ico if pre-16.4 Safari matters.
@@ -30,9 +33,13 @@ export const metadata: Metadata = {
 };
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
+// Mono and Thai are below the fold or content-dependent, so they load when a
+// glyph first needs them (unicode-range) rather than competing with the faces
+// every page paints first.
 const geistMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-geist-mono",
+  preload: false,
 });
 const sourceSerif = Source_Serif_4({
   subsets: ["latin"],
@@ -42,6 +49,7 @@ const notoSerifThai = Noto_Serif_Thai({
   subsets: ["thai"],
   weight: ["400", "600"],
   variable: "--font-noto-serif-thai",
+  preload: false,
 });
 
 export default function RootLayout({

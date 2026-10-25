@@ -44,6 +44,15 @@ test("decodes common entities and collapses whitespace", () => {
   ).toBe("Fast & simple saving");
 });
 
+test("decodes numeric entities without double-decoding", () => {
+  expect(
+    metaDescription(`<meta name="description" content="macOS &#38; Linux &#x2014; &#39;fast&#39;">`),
+  ).toBe("macOS & Linux — 'fast'");
+  expect(metaDescription(`<meta name="description" content="&amp;lt;b&amp;gt;">`)).toBe(
+    "&lt;b&gt;",
+  );
+});
+
 test("caps a long description at 280 chars", () => {
   const long = "x".repeat(500);
   expect(metaDescription(`<meta name="description" content="${long}">`)?.length).toBe(
