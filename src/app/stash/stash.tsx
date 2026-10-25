@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import {
+  useDeferredValue,
   useEffect,
   useMemo,
   useOptimistic,
@@ -10,20 +11,30 @@ import {
   useSyncExternalStore,
   useTransition,
 } from "react";
-import { useFormStatus } from "react-dom";
 
 import { text, titleOr } from "~/form";
 import { authClient } from "~/server/better-auth/client";
 import type { items } from "~/server/db/schema";
 
+import { CopyButton } from "../copy-button";
 import { GitHubMark, REPO_URL } from "../github-mark";
 import { StashMark } from "../stash-mark";
 import { ThemeToggle } from "../theme-toggle";
 
 import { createItem, deleteItem, updateItem } from "./actions";
 
-type Item = typeof items.$inferSelect;
+// The columns stash/page.tsx selects: what the list renders, nothing more.
+type Item = Pick<
+  typeof items.$inferSelect,
+  "id" | "kind" | "title" | "url" | "cmd" | "image" | "description" | "tags"
+>;
 type Tab = "all" | "tool" | "formula";
+// What a fresh composer opens with, field by field: a remembered draft, a
+// no-match prefill, or the item being edited.
+type Draft = Partial<
+  Record<"kind" | "url" | "cmd" | "title" | "description" | "tags", string>
+>;
+type Failure = { message: string; field?: string };
 
 type Patch =
   | { type: "add"; item: Item }
@@ -54,11 +65,14 @@ function hostOf(url: string): string {
   }
 }
 
-function draftFrom(formData: FormData, id: string, userId: string): Item {
+// Thai script. Marking Thai text lang="th" gives a screen reader the right voice
+// and lets the :lang(th) leading rule in globals.css apply.
+const langOf = (s: string) => (/[฀-๿]/.test(s) ? "th" : undefined);
+
+function draftFrom(formData: FormData, id: string): Item {
   const kind = text(formData, "kind") === "tool" ? "tool" : "formula";
   return {
     id,
-    userId,
     kind,
     title: titleOr(
       text(formData, "title").trim(),
@@ -75,8 +89,6 @@ function draftFrom(formData: FormData, id: string, userId: string): Item {
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean),
-    createdAt: new Date(),
-    updatedAt: new Date(),
   };
 }
 
@@ -91,86 +103,123 @@ function formDataOf(item: Item): FormData {
   return fd;
 }
 
+function draftOf(item: Item): Draft {
+  return {
+    kind: item.kind,
+    url: item.url ?? "",
+    cmd: item.cmd ?? "",
+    title: item.title,
+    description: item.description,
+    tags: item.tags.join(", "),
+  };
+}
+
 const focusRing =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+// Touch-sized hit area on coarse pointers (WCAG 2.5.5); a mouse keeps the
+// density. Pair with inline-flex/flex + items-center so the label stays centred.
+const touch = "pointer-coarse:min-h-11";
 const fieldLabel = "flex flex-col gap-1 text-label text-ink";
-const field = `w-full rounded border border-field bg-bg px-3 py-2 text-body text-ink placeholder:text-muted ${focusRing}`;
+const field = `w-full rounded border border-field bg-bg px-3 py-2 text-body text-ink placeholder:text-muted aria-[invalid=true]:border-danger ${focusRing}`;
 // Search is the product's core act ("re-finding is the product"), so it reads a
 // step larger than the composer fields — the one input that leads. pr-10 keeps a
 // gutter for the idle `/` hint (and the native search-clear once you type).
 const search = `w-full rounded border border-field bg-bg py-2.5 pr-10 pl-3 text-title text-ink placeholder:text-muted ${focusRing}`;
+const quietButton = `inline-flex items-center rounded px-2 py-1 text-label text-muted ${touch} ${focusRing}`;
+const toast =
+  "border-border bg-surface flex items-center justify-between gap-4 rounded border px-4 py-3 shadow-lg";
 
 // One selected treatment for every segmented control (kind tabs, composer
 // tool/formula toggle): accent fill (`bg-accent text-bg`) plus a reserved ✓ slot
 // so the state never rides on color alone and selection never reflows the pair.
 // The tag chips share the same accent+✓ vocabulary in pill form.
-const segment = `rounded px-2.5 py-1 text-label transition-colors duration-150 ${focusRing}`;
+const segment = `rounded px-2.5 py-1 text-label transition-colors duration-150 ${touch} ${focusRing}`;
 const segmentOff = "text-muted hover:text-ink";
 
 // Sidebar section label. Left padding matches the filter rows' so the heading
 // sits flush with the labels beneath it.
 const railHeading = "px-2 text-label font-medium text-muted";
 
+const cookie = (name: string, value: string) =>
+  (document.cookie = `${name}=${value};path=/;max-age=31536000;samesite=lax`);
+
 // Tailwind's lg breakpoint (64rem). It gates the master–detail split: at or
 // above it there's room for a preview pane beside the list, so rows become lean
 // selectors; below it there's no room, so rows carry everything inline.
-function useWide() {
+const wideQuery = "(min-width: 64rem)";
+
+function useWide(initial: boolean) {
   return useSyncExternalStore(
     (cb) => {
-      const mq = window.matchMedia("(min-width: 64rem)");
-      mq.addEventListener("change", cb);
-      return () => mq.removeEventListener("change", cb);
+      const mq = window.matchMedia(wideQuery);
+      const onChange = () => {
+        // Keep the server's hint current for the next load (see layout.tsx).
+        cookie("wide", mq.matches ? "1" : "0");
+        cb();
+      };
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
     },
-    () => window.matchMedia("(min-width: 64rem)").matches,
-    () => false, // server assumes narrow; desktop swaps in after hydration
+    () => window.matchMedia(wideQuery).matches,
+    // The layout's head script records the viewport in a cookie, so the server
+    // renders the layout this browser keeps. A first visit assumes narrow.
+    () => initial,
   );
 }
 
 export function Stash({
   items: initial,
   name,
+  initialWide,
+  initialRailOpen,
 }: {
   items: Item[];
   name: string;
+  initialWide: boolean;
+  initialRailOpen: boolean;
 }) {
   const router = useRouter();
   const [list, patch] = useOptimistic(initial, reduce);
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+  // Its own transition, so a delete in flight never disables Sign out.
+  const [signingOut, startSignOut] = useTransition();
 
   const [query, setQuery] = useState("");
+  // Typing stays instant; the filter over every item renders when it can.
+  const deferredQuery = useDeferredValue(query);
   const [tab, setTab] = useState<Tab>("all");
   const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [editing, setEditing] = useState<Item | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // One open composer at a time. `key` remounts the form per opening, so its
+  // kind and fields always start from `defaults`, never from the last session.
+  const [composer, setComposer] = useState<{
+    key: number;
+    editing: Item | null;
+    defaults: Draft;
+    restored: boolean;
+  } | null>(null);
+  const [error, setError] = useState<Failure | null>(null);
   const [undo, setUndo] = useState<Item | null>(null);
+  const [saved, setSaved] = useState<{ title: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const wide = useWide();
+  const wide = useWide(initialWide);
 
-  // Desktop rail open/collapsed, remembered per browser. Mobile uses the
+  // Desktop rail open/collapsed, remembered per browser in a cookie the server
+  // reads, so a collapsed rail never renders open for a frame. Mobile uses the
   // drawer instead, opened on demand.
-  // ponytail: read after mount, so a stored "collapsed" shows the rail for one
-  // frame. Move to a cookie read on the server if that flash ever bothers.
-  const [railOpen, setRailOpen] = useState(true);
-  useEffect(() => {
-    try {
-      if (localStorage.getItem("rail") === "closed") setRailOpen(false);
-    } catch {}
-  }, []);
+  const [railOpen, setRailOpen] = useState(initialRailOpen);
   const drawerRef = useRef<HTMLDialogElement>(null);
 
   function toggleFilters() {
     if (!wide) return drawerRef.current?.showModal();
     const next = !railOpen;
     setRailOpen(next);
-    try {
-      localStorage.setItem("rail", next ? "open" : "closed");
-    } catch {}
+    cookie("rail", next ? "open" : "closed");
   }
 
   const searchRef = useRef<HTMLInputElement>(null);
   const firstRef = useRef<HTMLElement | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const undoRef = useRef<HTMLButtonElement>(null);
   // The desktop preview pane. Enter on a selected row jumps focus here, to the
@@ -178,49 +227,100 @@ export function Stash({
   const paneRef = useRef<HTMLElement>(null);
   // Where focus goes when the composer closes: the element that opened it.
   const returnFocus = useRef<HTMLElement | null>(null);
+  // An unsaved new item survives Esc/Cancel and comes back on the next open.
+  const draftRef = useRef<Draft>({});
+  const composerKey = useRef(0);
 
-  const userId = initial[0]?.userId ?? "";
-
-  function openComposer(item: Item | null = null) {
-    returnFocus.current = document.activeElement as HTMLElement | null;
-    setEditing(item);
-    setComposerOpen(true);
-    requestAnimationFrame(() => firstRef.current?.focus());
+  function keepDraft() {
+    const form = formRef.current;
+    if (!form || composer?.editing) return;
+    const fields = [...new FormData(form)].filter(
+      (e): e is [string, string] => typeof e[1] === "string" && !!e[1].trim(),
+    );
+    // The kind alone isn't a draft; it only rides along with real input.
+    draftRef.current = fields.some(([k]) => k !== "kind")
+      ? Object.fromEntries(fields)
+      : {};
   }
 
-  function closeComposer() {
-    setComposerOpen(false);
-    setEditing(null);
+  function openComposer(item: Item | null = null, prefill?: Draft) {
+    // Already composing something new: just put the cursor back.
+    if (composer && !composer.editing && !item && !prefill) {
+      firstRef.current?.focus();
+      return;
+    }
+    if (composer) keepDraft();
+    else returnFocus.current = document.activeElement as HTMLElement | null;
+    const restored =
+      !item && !prefill && Object.keys(draftRef.current).length > 0;
+    setError(null);
+    setComposer({
+      key: ++composerKey.current,
+      editing: item,
+      defaults: item ? draftOf(item) : (prefill ?? draftRef.current),
+      restored,
+    });
+  }
+
+  function closeComposer(done = false) {
+    if (!done) keepDraft();
+    else if (!composer?.editing) draftRef.current = {};
+    setComposer(null);
     setError(null);
     // A Row's Edit button survives the close and is restorable; the disclosure
     // button unmounts while the composer is open, so its old node is detached —
-    // fall back to the freshly-remounted trigger.
+    // fall back to the freshly-remounted trigger (or search, on an empty stash).
     requestAnimationFrame(() => {
       const prev = returnFocus.current;
       if (prev?.isConnected) prev.focus();
-      else triggerRef.current?.focus();
+      else (triggerRef.current ?? searchRef.current)?.focus();
     });
+  }
+
+  function discardDraft() {
+    draftRef.current = {};
+    setComposer(
+      (c) =>
+        c && {
+          ...c,
+          key: ++composerKey.current,
+          defaults: {},
+          restored: false,
+        },
+    );
   }
 
   // After an optimistic delete the row unmounts and focus would fall to <body>.
   // Send it to the Undo button — the announced, immediate next action.
+  const [undoHover, setUndoHover] = useState(false);
+  const [undoFocus, setUndoFocus] = useState(false);
   useEffect(() => {
+    // A fresh offer starts its own clock. Reset before focusing: the focus
+    // handler below may hold it again.
+    setUndoHover(false);
+    setUndoFocus(false);
     if (undo) undoRef.current?.focus();
-    setUndoHeld(false); // a fresh offer starts its own clock
   }, [undo]);
 
-  // The undo offer lapses after 8s, held open while the pointer rests on it.
-  // Focus sits on Undo by then, so hand it to search rather than <body>.
-  const [undoHeld, setUndoHeld] = useState(false);
+  // The undo offer lapses after 8s, held open while the pointer rests on it or
+  // keyboard focus is in it (WCAG 2.2.1). Focus sits on Undo by then, so hand
+  // it to search rather than <body>.
   useEffect(() => {
-    if (!undo || undoHeld) return;
+    if (!undo || undoHover || undoFocus) return;
     const t = setTimeout(() => {
       if (document.activeElement === undoRef.current)
         searchRef.current?.focus();
       setUndo(null);
     }, 8000);
     return () => clearTimeout(t);
-  }, [undo, undoHeld]);
+  }, [undo, undoHover, undoFocus]);
+
+  // "Saved" is a receipt, not an offer: it lapses on its own.
+  useEffect(() => {
+    if (!saved) return;
+    const t = setTimeout(() => setSaved(null), 4000);
+    return () => clearTimeout(t);
+  }, [saved]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -230,10 +330,13 @@ export function Stash({
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       const target = event.target as HTMLElement | null;
+      // The filter drawer is modal: its own Esc closes it (and only it), and
+      // nothing behind it answers a shortcut.
+      if (target?.closest("dialog")) return;
       const typing = !!target?.closest("input, textarea, [contenteditable]");
 
       if (event.key === "Escape") {
-        if (composerOpen) closeComposer();
+        if (composer) closeComposer();
         else if (query) setQuery("");
         else target?.blur();
         return;
@@ -252,7 +355,7 @@ export function Stash({
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [composerOpen, query]);
+  }, [composer, query]);
 
   const allTags = useMemo(
     () =>
@@ -262,21 +365,35 @@ export function Stash({
     [list],
   );
 
-  // Search runs over title, description, cmd and tags — the fields the spec
-  // names. Thai has no word boundaries, so substring matching is the only
-  // option; toLowerCase is a harmless no-op on Thai text. Kind and tag are
-  // facets layered on top; the rail counts read off `searched`, so every count
-  // answers "how many match this search" and stays put no matter which facet is
-  // active.
+  // Uses across the whole stash, not the search: the rail ranks by these, and
+  // a ranking that reshuffled on every keystroke would be unusable.
+  const tagTotals = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const item of list)
+      for (const t of item.tags) m.set(t, (m.get(t) ?? 0) + 1);
+    return m;
+  }, [list]);
+
+  // Search runs over title, description, cmd, URL and tags — every field a row
+  // shows, so the host printed beside a title is findable too. Thai has no word
+  // boundaries, so substring matching is the only option; toLowerCase is a
+  // harmless no-op on Thai text. Kind and tag are facets layered on top; the
+  // rail counts read off `searched`, so every count answers "how many match
+  // this search" and stays put no matter which facet is active.
+  const q = deferredQuery.trim();
   const searched = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return list;
+    const needle = q.toLowerCase();
+    if (!needle) return list;
     return list.filter((item) =>
-      [item.title, item.description, item.cmd ?? "", ...item.tags].some(
-        (field) => field.toLowerCase().includes(q),
-      ),
+      [
+        item.title,
+        item.description,
+        item.cmd ?? "",
+        item.url ?? "",
+        ...item.tags,
+      ].some((field) => field.toLowerCase().includes(needle)),
     );
-  }, [list, query]);
+  }, [list, q]);
 
   const kindCounts: Record<Tab, number> = {
     all: searched.length,
@@ -298,6 +415,7 @@ export function Stash({
   );
 
   const activeFilters = (tab === "all" ? 0 : 1) + (activeTag ? 1 : 0);
+  const hasItems = list.length > 0;
 
   const rail = (
     <FilterRail
@@ -306,10 +424,14 @@ export function Stash({
       kindCounts={kindCounts}
       tags={railTags}
       tagCounts={tagCounts}
+      tagTotals={tagTotals}
       activeTag={activeTag}
       onTag={setActiveTag}
     />
   );
+  // Whether the kind tabs exist in the DOM right now: aria references to them
+  // must not dangle while the desktop rail is collapsed.
+  const tabsRendered = hasItems && (!wide || railOpen);
 
   const visible = useMemo(
     () =>
@@ -342,34 +464,50 @@ export function Stash({
     ? (tools.find((i) => i.id === selectedId) ?? tools[0] ?? null)
     : null;
 
+  // The result line under search: what is showing and why, in words — so a
+  // collapsed rail or the closed drawer never hides which filters are on. A
+  // polite live region, so a screen reader hears the count settle too.
+  const filtering = q !== "" || activeFilters > 0;
+  const summary = filtering
+    ? [
+        `${visible.length} ${visible.length === 1 ? "match" : "matches"}`,
+        q && `for “${q}”`,
+        tab !== "all" && `in ${tab === "tool" ? "Tools" : "Formulae"}`,
+        activeTag && `tagged ${activeTag}`,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : `${list.length} ${list.length === 1 ? "thing" : "things"} saved`;
+
+  function clearAll() {
+    setQuery("");
+    setActiveTag(null);
+    setTab("all");
+  }
+
   async function onSubmit(formData: FormData) {
     setError(null);
-    const target = editing;
+    const target = composer?.editing ?? null;
+    const draft = draftFrom(formData, target?.id ?? crypto.randomUUID());
+    patch({ type: target ? "update" : "add", item: draft });
+    const result = target
+      ? await updateItem(target.id, formData)
+      : await createItem(formData);
+    if (result.error)
+      return setError({ message: result.error, field: result.field });
 
-    if (target) {
-      patch({
-        type: "update",
-        item: draftFrom(formData, target.id, target.userId),
-      });
-      const result = await updateItem(target.id, formData);
-      if (result.error) return setError(result.error);
-    } else {
-      patch({
-        type: "add",
-        item: draftFrom(formData, crypto.randomUUID(), userId),
-      });
-      const result = await createItem(formData);
-      if (result.error) return setError(result.error);
-    }
-
-    closeComposer();
+    // Show where it went: the desktop pane selects it (a tool), and a receipt
+    // names it, since the alphabetical list may have filed it off-screen.
+    if (result.id && draft.kind === "tool") setSelectedId(result.id);
+    setSaved({ title: draft.title });
+    closeComposer(true);
   }
 
   function onDelete(item: Item) {
     startTransition(async () => {
       patch({ type: "delete", id: item.id });
       const result = await deleteItem(item.id);
-      if (result.error) setError(result.error);
+      if (result.error) setError({ message: result.error });
       else setUndo(item);
     });
   }
@@ -381,12 +519,35 @@ export function Stash({
       // timestamp. Soft-delete only if that ever matters.
       patch({ type: "add", item });
       const result = await createItem(formDataOf(item));
-      if (result.error) setError(result.error);
+      if (result.error) setError({ message: result.error });
     });
+  }
+
+  function onEdit(item: Item) {
+    // Editing a tool shows it in the pane, so the form and the preview agree.
+    if (item.kind === "tool") setSelectedId(item.id);
+    openComposer(item);
+  }
+
+  // The no-match state offers to save what you just looked for: a host-like
+  // query becomes the URL, anything else the title.
+  function saveQuery() {
+    const hostLike = /^\S+\.\S+$/.test(q);
+    openComposer(null, hostLike ? { kind: "tool", url: q } : { title: q });
   }
 
   return (
     <div className="px-4 py-10 sm:px-6">
+      {/* The header and the rail's tag list sit ahead of search in tab order.
+          Parked above the viewport until keyboard focus lands on it. */}
+      <button
+        type="button"
+        onClick={() => searchRef.current?.focus()}
+        className={`bg-surface text-label text-ink border-border fixed top-2 left-2 z-10 -translate-y-16 rounded border px-3 py-2 focus-visible:translate-y-0 ${focusRing}`}
+      >
+        Skip to search
+      </button>
+
       <header className="flex items-center justify-between gap-4">
         <h1 className="text-display text-ink flex shrink-0 items-center gap-2.5 font-serif leading-none">
           <StashMark className="size-[1em] rounded-[3px]" />
@@ -398,15 +559,15 @@ export function Stash({
           <span className="text-label text-muted min-w-0 truncate">{name}</span>
           <button
             type="button"
-            disabled={isPending}
+            disabled={signingOut}
             onClick={() =>
-              startTransition(async () => {
+              startSignOut(async () => {
                 await authClient.signOut();
                 router.push("/login");
                 router.refresh();
               })
             }
-            className={`text-label text-muted hover:text-ink shrink-0 disabled:pointer-events-none disabled:opacity-50 ${focusRing}`}
+            className={`text-label text-muted hover:text-ink inline-flex h-9 shrink-0 items-center rounded px-1 disabled:pointer-events-none disabled:opacity-50 ${touch} ${focusRing}`}
           >
             Sign out
           </button>
@@ -425,16 +586,17 @@ export function Stash({
 
       <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:gap-10">
         {/* One rail, two homes: a collapsible column on desktop, a slide-in
-            drawer below lg. Rendered in exactly one so its ids stay unique. */}
-        {wide && railOpen && (
+            drawer below lg. Rendered in exactly one so its ids stay unique. An
+            empty stash has nothing to filter, so neither renders. */}
+        {hasItems && wide && railOpen && (
           <aside id="filters" className="w-52 shrink-0">
             {/* ponytail: sticky pins the rail; a list taller than the viewport
-                just scrolls with the page. Add internal overflow only if a
-                stash ever grows hundreds of tags. */}
+                just scrolls with the page. The tag list collapses to the most
+                used, so that takes a very large stash. */}
             <div className="sticky top-10">{rail}</div>
           </aside>
         )}
-        {!wide && (
+        {hasItems && !wide && (
           <dialog
             ref={drawerRef}
             id="filters"
@@ -456,7 +618,7 @@ export function Stash({
                 <button
                   type="button"
                   onClick={() => drawerRef.current?.close()}
-                  className={`text-label text-muted hover:text-ink rounded px-2 py-2 ${focusRing}`}
+                  className={`text-label text-muted hover:text-ink inline-flex items-center rounded px-2 py-2 ${touch} ${focusRing}`}
                 >
                   Done
                 </button>
@@ -468,32 +630,43 @@ export function Stash({
 
         <main className="min-w-0 flex-1">
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={toggleFilters}
-              aria-controls="filters"
-              aria-expanded={wide ? railOpen : undefined}
-              className={`border-field text-label text-muted hover:text-ink flex shrink-0 items-center gap-2 rounded border px-3 transition-colors duration-150 ${focusRing}`}
-            >
-              <PanelIcon />
-              <span>{wide && railOpen ? "Hide filters" : "Filters"}</span>
-              {/* Collapsed or in the drawer, the rail can't show what's on, so the
-                button does: a count, never color alone. */}
-              {activeFilters > 0 && (
-                <span className="bg-accent text-bg rounded px-1.5 tabular-nums">
-                  {activeFilters}
-                  <span className="sr-only"> active</span>
-                </span>
-              )}
-            </button>
+            {hasItems && (
+              <button
+                type="button"
+                onClick={toggleFilters}
+                aria-controls={tabsRendered ? "filters" : undefined}
+                aria-expanded={wide ? railOpen : undefined}
+                className={`border-field text-label text-muted hover:text-ink flex shrink-0 items-center gap-2 rounded border px-3 transition-colors duration-150 ${focusRing}`}
+              >
+                <PanelIcon />
+                <span>{wide && railOpen ? "Hide filters" : "Filters"}</span>
+                {/* Collapsed or in the drawer, the rail can't show what's on, so the
+                    button does: a count, never color alone. */}
+                {activeFilters > 0 && (
+                  <span className="bg-accent text-bg rounded px-1.5 tabular-nums">
+                    {activeFilters}
+                    <span className="sr-only"> active</span>
+                  </span>
+                )}
+              </button>
+            )}
             <div className="relative min-w-0 flex-1">
               <input
                 ref={searchRef}
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search titles, descriptions, commands, tags…"
+                // The long form names what's searched; a phone has room for
+                // a few words beside the Filters button.
+                placeholder={
+                  wide
+                    ? "Search titles, sites, commands…"
+                    : "Search your stash…"
+                }
                 aria-label="Search your stash"
+                aria-describedby={hasItems ? "search-summary" : undefined}
+                autoComplete="off"
+                spellCheck={false}
                 className={search}
               />
               {/* Idle-only shortcut hint. Hidden once you type (native clear takes
@@ -501,7 +674,7 @@ export function Stash({
               {!query && (
                 <kbd
                   aria-hidden="true"
-                  className="border-border text-label text-muted pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded border px-1.5 py-0.5 sm:block"
+                  className="border-border text-label text-muted pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded border px-1.5 py-0.5 sm:block pointer-coarse:hidden"
                 >
                   /
                 </kbd>
@@ -509,41 +682,82 @@ export function Stash({
             </div>
           </div>
 
-          <Composer
-            open={composerOpen}
-            editing={editing}
-            error={error}
-            firstRef={firstRef}
-            triggerRef={triggerRef}
-            onOpen={() => openComposer()}
-            onCancel={closeComposer}
-            onSubmit={onSubmit}
-          />
+          {hasItems && (
+            <div className="text-label text-muted mt-2 flex items-baseline gap-3">
+              <p
+                id="search-summary"
+                role="status"
+                className="min-w-0 truncate tabular-nums"
+              >
+                {summary}
+              </p>
+              {filtering && (
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className={`text-accent shrink-0 rounded underline underline-offset-2 ${focusRing}`}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+
+          {composer ? (
+            <ComposerForm
+              key={composer.key}
+              editing={composer.editing}
+              defaults={composer.defaults}
+              restored={composer.restored}
+              error={error}
+              formRef={formRef}
+              firstRef={firstRef}
+              onCancel={() => closeComposer()}
+              onDiscard={discardDraft}
+              onSubmit={onSubmit}
+            />
+          ) : (
+            // An empty stash leads with its own "Save your first" instead.
+            hasItems && (
+              <button
+                ref={triggerRef}
+                type="button"
+                onClick={() => openComposer()}
+                className={`border-border text-body text-muted hover:border-accent hover:text-ink mt-6 flex w-full items-center justify-between rounded border border-dashed px-3 py-2.5 text-left transition-colors duration-150 ${focusRing}`}
+              >
+                <span>
+                  <span aria-hidden="true">+ </span>Save a tool or a formula…
+                </span>
+                <kbd className="border-border text-label rounded border px-1.5 py-0.5 pointer-coarse:hidden">
+                  a
+                </kbd>
+              </button>
+            )
+          )}
 
           <div
             role="tabpanel"
             id="kind-panel"
-            aria-labelledby={`kind-tab-${tab}`}
+            {...(tabsRendered
+              ? { "aria-labelledby": `kind-tab-${tab}` }
+              : { "aria-label": "Results" })}
           >
             {visible.length === 0 ? (
               <Empty
-                hasItems={list.length > 0}
+                hasItems={hasItems}
+                query={q}
+                filtered={activeFilters > 0}
                 onAdd={() => openComposer()}
-                onClear={() => {
-                  setQuery("");
-                  setActiveTag(null);
-                  setTab("all");
-                }}
+                onClear={clearAll}
+                onSaveQuery={saveQuery}
               />
             ) : (
               <div className="mt-6 flex flex-col gap-10">
                 {tools.length > 0 && (
                   <section>
-                    {tab === "all" && (
-                      <SectionHeading count={tools.length}>
-                        Tools
-                      </SectionHeading>
-                    )}
+                    <SectionHeading count={tools.length} quiet={tab !== "all"}>
+                      Tools
+                    </SectionHeading>
                     <ul
                       className={`divide-border border-border divide-y ${tab === "all" ? "" : "border-t"}`}
                     >
@@ -559,7 +773,7 @@ export function Stash({
                               ?.querySelector<HTMLElement>("a, button")
                               ?.focus()
                           }
-                          onEdit={() => openComposer(item)}
+                          onEdit={() => onEdit(item)}
                           onDelete={() => onDelete(item)}
                         />
                       ))}
@@ -569,17 +783,18 @@ export function Stash({
 
                 {formulae.length > 0 && (
                   <section>
-                    {tab === "all" && (
-                      <SectionHeading count={formulae.length}>
-                        Formulae
-                      </SectionHeading>
-                    )}
+                    <SectionHeading
+                      count={formulae.length}
+                      quiet={tab !== "all"}
+                    >
+                      Formulae
+                    </SectionHeading>
                     <ul className="flex flex-col gap-3">
                       {formulae.map((item) => (
                         <FormulaCard
                           key={item.id}
                           item={item}
-                          onEdit={() => openComposer(item)}
+                          onEdit={() => onEdit(item)}
                           onDelete={() => onDelete(item)}
                         />
                       ))}
@@ -591,13 +806,18 @@ export function Stash({
           </div>
         </main>
 
-        {active && (
+        {active ? (
           <DetailPane
             item={active}
             containerRef={paneRef}
-            onEdit={() => openComposer(active)}
+            onEdit={() => onEdit(active)}
             onDelete={() => onDelete(active)}
           />
+        ) : (
+          // Hold the pane's column while no tool is showing (the Formulae tab,
+          // a formulae-only search), so the list never jumps wider mid-typing.
+          wide &&
+          hasItems && <div aria-hidden="true" className="w-96 shrink-0" />
         )}
       </div>
 
@@ -605,14 +825,11 @@ export function Stash({
           banner never renders. Surface those failures here instead. */}
       {/* One stack, so an error and the undo offer never cover each other. */}
       <div className="fixed inset-x-4 bottom-4 mx-auto flex max-w-sm flex-col gap-2">
-        {error && !composerOpen && (
-          <div
-            role="alert"
-            className="border-border bg-surface flex items-center justify-between gap-4 rounded border px-4 py-3 shadow-lg"
-          >
+        {error && !composer && (
+          <div role="alert" className={toast}>
             <span className="text-label text-danger">
               <span aria-hidden="true">✕ </span>
-              {error}
+              {error.message}
             </span>
             <button
               type="button"
@@ -624,24 +841,43 @@ export function Stash({
           </div>
         )}
 
-        {undo && (
-          <div
-            role="status"
-            onPointerEnter={() => setUndoHeld(true)}
-            onPointerLeave={() => setUndoHeld(false)}
-            className="border-border bg-surface flex items-center justify-between gap-4 rounded border px-4 py-3 shadow-lg"
-          >
-            <span className="text-label text-ink">Deleted “{undo.title}”</span>
-            <button
-              ref={undoRef}
-              type="button"
-              onClick={() => onUndo(undo)}
-              className={`text-label text-accent font-semibold underline underline-offset-2 ${focusRing}`}
+        {/* Always mounted, so what lands in it is announced. */}
+        <div aria-live="polite" className="flex flex-col gap-2">
+          {undo && (
+            <div
+              onPointerEnter={() => setUndoHover(true)}
+              onPointerLeave={() => setUndoHover(false)}
+              // Keyboard focus holds the offer; the programmatic focus a mouse
+              // delete hands it does not (it isn't :focus-visible), so a pointer
+              // user's offer still lapses on its own.
+              onFocus={(e) =>
+                e.target.matches(":focus-visible") && setUndoFocus(true)
+              }
+              onBlur={() => setUndoFocus(false)}
+              className={toast}
             >
-              Undo
-            </button>
-          </div>
-        )}
+              <span className="text-label text-ink min-w-0 truncate">
+                Deleted “{undo.title}”
+              </span>
+              <button
+                ref={undoRef}
+                type="button"
+                onClick={() => onUndo(undo)}
+                className={`text-label text-accent shrink-0 font-semibold underline underline-offset-2 ${focusRing}`}
+              >
+                Undo
+              </button>
+            </div>
+          )}
+
+          {saved && (
+            <div className={toast}>
+              <span className="text-label text-ink min-w-0 truncate">
+                <span aria-hidden="true">✓ </span>Saved “{saved.title}”
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -710,7 +946,7 @@ function KindTabs({
             tabIndex={on ? 0 : -1}
             onClick={() => onTab(value)}
             onKeyDown={(e) => onKeyDown(e, i)}
-            className={`text-label rounded transition-colors duration-150 ${focusRing} flex w-full items-center justify-between gap-1.5 px-2 py-2.5 lg:py-1.5 ${
+            className={`text-label rounded transition-colors duration-150 ${touch} ${focusRing} flex w-full items-center justify-between gap-1.5 px-2 py-2.5 lg:py-1.5 ${
               on ? "bg-accent text-bg" : segmentOff
             }`}
           >
@@ -734,6 +970,10 @@ function KindTabs({
   );
 }
 
+// Past this many tags the rail shows only the most used, behind "Show all".
+// A flat list of dozens of one-off tags is a wall, not a filter.
+const TAG_LIMIT = 10;
+
 // The card-catalog drawer: the two filter axes as one quiet rail. A vertical
 // column on desktop (where it earns the width a stretched search box couldn't);
 // above the list, wrapping into chips, on narrow screens. Kind is the fixed
@@ -748,6 +988,7 @@ function FilterRail({
   kindCounts,
   tags,
   tagCounts,
+  tagTotals,
   activeTag,
   onTag,
 }: {
@@ -756,9 +997,24 @@ function FilterRail({
   kindCounts: Record<Tab, number>;
   tags: string[];
   tagCounts: Map<string, number>;
+  tagTotals: Map<string, number>;
   activeTag: string | null;
   onTag: (tag: string | null) => void;
 }) {
+  const [showAll, setShowAll] = useState(false);
+  // Most used first (across the whole stash, so it holds still while you type),
+  // alphabetical within a count. Collapsing hides nothing you'd miss: hiding
+  // one or two would cost more than showing them, and the active tag stays.
+  const ranked = [...tags].sort(
+    (a, b) =>
+      (tagTotals.get(b) ?? 0) - (tagTotals.get(a) ?? 0) || a.localeCompare(b),
+  );
+  const collapsible = ranked.length > TAG_LIMIT + 2;
+  const shown =
+    showAll || !collapsible
+      ? ranked
+      : ranked.filter((t, i) => i < TAG_LIMIT || t === activeTag);
+
   return (
     <nav aria-label="Filters" className="flex flex-col gap-6">
       <div>
@@ -779,11 +1035,12 @@ function FilterRail({
             Tags
           </h2>
           <div
+            id="rail-tag-list"
             role="group"
             aria-labelledby="rail-tags"
             className="mt-1.5 flex flex-col gap-0.5"
           >
-            {tags.map((tag) => {
+            {shown.map((tag) => {
               const on = activeTag === tag;
               return (
                 <FilterRow
@@ -796,6 +1053,17 @@ function FilterRail({
               );
             })}
           </div>
+          {collapsible && (
+            <button
+              type="button"
+              aria-expanded={showAll}
+              aria-controls="rail-tag-list"
+              onClick={() => setShowAll(!showAll)}
+              className={`${quietButton} hover:text-ink mt-1 underline underline-offset-2`}
+            >
+              {showAll ? "Show fewer tags" : `Show all ${ranked.length} tags`}
+            </button>
+          )}
         </div>
       )}
     </nav>
@@ -822,7 +1090,7 @@ function FilterRow({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`text-label flex w-full items-center justify-between gap-1.5 rounded px-2 py-2.5 transition-colors duration-150 lg:py-1.5 ${focusRing} ${
+      className={`text-label flex w-full items-center justify-between gap-1.5 rounded px-2 py-2.5 transition-colors duration-150 lg:py-1.5 ${touch} ${focusRing} ${
         active
           ? "bg-accent text-bg"
           : "text-muted hover:bg-surface hover:text-ink"
@@ -832,7 +1100,9 @@ function FilterRow({
         <span aria-hidden="true" className={active ? "" : "invisible"}>
           ✓
         </span>
-        <span className="truncate">{label}</span>
+        <span lang={langOf(label)} className="truncate">
+          {label}
+        </span>
       </span>
       <span
         className={`shrink-0 tabular-nums ${active ? "text-bg" : "text-muted"}`}
@@ -843,83 +1113,114 @@ function FilterRow({
   );
 }
 
-function Composer({
-  open,
+function ComposerForm({
   editing,
+  defaults,
+  restored,
   error,
+  formRef,
   firstRef,
-  triggerRef,
-  onOpen,
   onCancel,
+  onDiscard,
   onSubmit,
 }: {
-  open: boolean;
   editing: Item | null;
-  error: string | null;
+  defaults: Draft;
+  restored: boolean;
+  error: Failure | null;
+  formRef: React.RefObject<HTMLFormElement | null>;
   firstRef: React.RefObject<HTMLElement | null>;
-  triggerRef: React.RefObject<HTMLButtonElement | null>;
-  onOpen: () => void;
   onCancel: () => void;
+  onDiscard: () => void;
   onSubmit: (formData: FormData) => Promise<void>;
 }) {
-  const [kind, setKind] = useState<"tool" | "formula">("tool");
+  // Mounted fresh per opening (keyed by the parent), so the kind and every
+  // field start from `defaults` and the first field is the one on screen.
+  const [kind, setKind] = useState<"tool" | "formula">(
+    defaults.kind === "formula" ? "formula" : "tool",
+  );
+  const [saving, startSaving] = useTransition();
 
+  // The thing you paste goes first and takes focus — on open and again on a
+  // kind switch, which swaps that field out: capture costs nothing.
   useEffect(() => {
-    if (open) setKind(editing?.kind ?? "tool");
-  }, [open, editing]);
+    firstRef.current?.focus();
+  }, [kind, firstRef]);
 
-  if (!open) {
-    return (
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={onOpen}
-        className={`border-border text-body text-muted hover:border-accent hover:text-ink mt-6 flex w-full items-center justify-between rounded border border-dashed px-3 py-2.5 text-left transition-colors duration-150 ${focusRing}`}
-      >
-        <span>
-          <span aria-hidden="true">+ </span>Save a tool or a formula…
-        </span>
-        <kbd className="border-border text-label rounded border px-1.5 py-0.5">
-          a
-        </kbd>
-      </button>
-    );
-  }
+  // A rejected save puts the cursor in the field that caused it.
+  useEffect(() => {
+    if (error?.field)
+      formRef.current
+        ?.querySelector<HTMLElement>(`[name="${error.field}"]`)
+        ?.focus();
+  }, [error, formRef]);
+
+  // Ties a field to the error it caused, so it reads as invalid and the
+  // message is announced with it.
+  const invalid = (name: string) =>
+    error?.field === name
+      ? { "aria-invalid": true, "aria-describedby": "composer-error" }
+      : {};
 
   return (
     <form
-      key={editing?.id ?? "new"}
-      action={onSubmit}
+      ref={formRef}
+      // onSubmit, not <form action>: React resets an action form when it
+      // settles, which wiped every field on a failed save. A transition still
+      // carries the optimistic patch and the pending state.
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (saving) return; // no second create/update from an Enter-mash
+        const formData = new FormData(event.currentTarget);
+        startSaving(() => onSubmit(formData));
+      }}
+      aria-label={
+        editing ? `Edit ${editing.title}` : "Save a tool or a formula"
+      }
       className="border-border bg-surface mt-6 flex flex-col gap-3 rounded border p-4"
     >
       <input type="hidden" name="kind" value={kind} />
 
-      <div
-        className="flex gap-1"
-        role="group"
-        aria-label="What are you saving?"
-      >
-        {(["tool", "formula"] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            aria-pressed={kind === value}
-            onClick={() => setKind(value)}
-            className={`${segment} inline-flex items-center gap-1.5 ${
-              kind === value ? "bg-accent text-bg" : segmentOff
-            }`}
-          >
-            {/* Reserved ✓ slot, no weight change — same treatment as KindTabs, so
-                switching tool↔formula never reflows the pair. */}
-            <span
-              aria-hidden="true"
-              className={kind === value ? "" : "invisible"}
+      <div className="flex items-center gap-1">
+        <div
+          className="flex gap-1"
+          role="group"
+          aria-label="What are you saving?"
+        >
+          {(["tool", "formula"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={kind === value}
+              onClick={() => setKind(value)}
+              className={`${segment} inline-flex items-center gap-1.5 ${
+                kind === value ? "bg-accent text-bg" : segmentOff
+              }`}
             >
-              ✓
-            </span>
-            <span>{value === "tool" ? "Tool" : "Formula"}</span>
-          </button>
-        ))}
+              {/* Reserved ✓ slot, no weight change — same treatment as KindTabs, so
+                  switching tool↔formula never reflows the pair. */}
+              <span
+                aria-hidden="true"
+                className={kind === value ? "" : "invisible"}
+              >
+                ✓
+              </span>
+              <span>{value === "tool" ? "Tool" : "Formula"}</span>
+            </button>
+          ))}
+        </div>
+        {restored && (
+          <p className="text-label text-muted ml-auto flex items-center gap-1">
+            Your unsaved draft.
+            <button
+              type="button"
+              onClick={onDiscard}
+              className={`${quietButton} hover:text-ink underline underline-offset-2`}
+            >
+              Discard
+            </button>
+          </p>
+        )}
       </div>
 
       {/* The thing you paste comes first and takes focus: capture costs
@@ -936,8 +1237,16 @@ function Composer({
             name="url"
             required
             maxLength={2048}
-            defaultValue={editing?.url ?? ""}
+            defaultValue={defaults.url}
             placeholder="ripgrep.dev"
+            // Not type="url": that rejects the bare host ("ripgrep.dev") the
+            // server is happy to complete. The URL keyboard, no autocorrect.
+            inputMode="url"
+            autoCapitalize="off"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
+            {...invalid("url")}
             className={`${field} font-mono`}
           />
         </label>
@@ -952,8 +1261,12 @@ function Composer({
             required
             rows={2}
             maxLength={8000}
-            defaultValue={editing?.cmd ?? ""}
+            defaultValue={defaults.cmd}
             placeholder="rg -i --hidden 'TODO'"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            {...invalid("cmd")}
             className={`${field} font-mono`}
           />
         </label>
@@ -966,10 +1279,11 @@ function Composer({
         <input
           name="title"
           maxLength={200}
-          defaultValue={editing?.title}
+          defaultValue={defaults.title}
           placeholder={
             kind === "tool" ? "Defaults to the site" : "Defaults to the command"
           }
+          {...invalid("title")}
           className={field}
         />
       </label>
@@ -981,7 +1295,8 @@ function Composer({
         <input
           name="description"
           maxLength={2000}
-          defaultValue={editing?.description}
+          defaultValue={defaults.description}
+          {...invalid("description")}
           className={field}
         />
       </label>
@@ -992,21 +1307,30 @@ function Composer({
         </span>
         <input
           name="tags"
-          defaultValue={editing?.tags.join(", ")}
+          defaultValue={defaults.tags}
           placeholder="git, ssh"
+          autoCapitalize="off"
+          {...invalid("tags")}
           className={field}
         />
       </label>
 
       {error && (
-        <p role="alert" className="text-label text-danger">
+        <p id="composer-error" role="alert" className="text-label text-danger">
           <span aria-hidden="true">✕ </span>
-          {error}
+          {error.message}
         </p>
       )}
 
       <div className="flex items-center gap-2">
-        <SubmitButton editing={editing} />
+        {/* Doubles as the save's busy state — "Saving…" while the action runs. */}
+        <button
+          type="submit"
+          disabled={saving}
+          className={`bg-accent text-body text-bg rounded px-4 py-2 transition-opacity duration-150 hover:opacity-90 disabled:opacity-60 disabled:hover:opacity-60 ${focusRing}`}
+        >
+          {saving ? "Saving…" : editing ? "Save changes" : "Save"}
+        </button>
         <button
           type="button"
           onClick={onCancel}
@@ -1014,25 +1338,11 @@ function Composer({
         >
           Cancel
         </button>
-        <span className="text-label text-muted ml-auto">Esc to close</span>
+        <span className="text-label text-muted ml-auto pointer-coarse:hidden">
+          Esc to close
+        </span>
       </div>
     </form>
-  );
-}
-
-// Reads the parent form's submission state so a double-click or Enter-mash can't
-// fire two createItem/updateItem calls (the server rate-limits but doesn't
-// dedupe). Doubles as the save's busy state — "Saving…" while the action runs.
-function SubmitButton({ editing }: { editing: Item | null }) {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className={`bg-accent text-body text-bg rounded px-4 py-2 transition-opacity duration-150 hover:opacity-90 disabled:opacity-60 disabled:hover:opacity-60 ${focusRing}`}
-    >
-      {pending ? "Saving…" : editing ? "Save changes" : "Save"}
-    </button>
   );
 }
 
@@ -1053,6 +1363,10 @@ function Row({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const host = item.url ? hostOf(item.url) : null;
+  // A defaulted title already is the host; printing both reads as a stutter.
+  const showHost = host && host !== item.title;
+
   // Desktop master: a lean summary that drives the preview pane. One button per
   // row and no nested links — Open/Copy/Edit/Delete live in the pane — so a
   // screen reader hears exactly one "select" control per row, and the title
@@ -1061,7 +1375,8 @@ function Row({
     // The keyboard retrieval path. Focus follows selection (onFocus selects, so
     // ↑/↓ scrub the preview as they walk the list); Enter hands focus to the
     // pane's first action — Open for a tool, Copy for a formula — so opening the
-    // found thing is one keystroke, not a tab through every remaining row.
+    // found thing is one keystroke, not a tab through every remaining row. Esc
+    // in the pane comes back here.
     // ponytail: ↑/↓ don't wrap and Edit/Delete still trail the pane in tab
     // order; add wrap / an "o to open" accelerator if daily use asks for it.
     function onKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
@@ -1096,15 +1411,16 @@ function Row({
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
               <span
+                lang={langOf(item.title)}
                 className={`text-title leading-thai text-ink truncate font-serif ${
                   selected ? "font-semibold" : ""
                 }`}
               >
                 {item.title}
               </span>
-              {item.url && (
-                <span className="text-label text-muted shrink-0">
-                  {hostOf(item.url)}
+              {showHost && (
+                <span className="text-label text-muted max-w-[40%] shrink-0 truncate">
+                  {host}
                 </span>
               )}
             </div>
@@ -1112,7 +1428,9 @@ function Row({
             {item.tags.length > 0 && (
               <ul className="text-label text-muted mt-1.5 flex flex-wrap gap-x-2">
                 {item.tags.map((tag) => (
-                  <li key={tag}>{tag}</li>
+                  <li key={tag} lang={langOf(tag)}>
+                    {tag}
+                  </li>
                 ))}
               </ul>
             )}
@@ -1133,37 +1451,35 @@ function Row({
     );
   }
 
+  // Narrow: the row carries everything, and the title gets the width. The tile
+  // shrinks below sm, the host takes its own line, the title may wrap to two,
+  // and Edit/Delete drop under the text on phones instead of claiming a column
+  // beside it — on a 360px screen that column left the title 0px wide.
   return (
-    <li className="row group flex items-start gap-4 py-4">
-      <RowTile item={item} />
+    <li className="row group grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-x-4">
+      <RowTile item={item} className="row-span-2 sm:row-span-1" />
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          {item.url ? (
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`text-title leading-thai text-ink truncate font-serif underline-offset-2 hover:underline ${focusRing}`}
-            >
-              {item.title}
-            </a>
-          ) : (
-            <h2 className="text-title leading-thai text-ink truncate font-serif">
-              {item.title}
-            </h2>
-          )}
-          {item.url && (
-            <span className="text-label text-muted shrink-0">
-              {hostOf(item.url)}
-            </span>
-          )}
-        </div>
-
-        {item.cmd && <CommandBlock cmd={item.cmd} />}
+      <div className="min-w-0">
+        <h3
+          lang={langOf(item.title)}
+          className="text-title leading-thai text-ink line-clamp-2 font-serif break-words"
+        >
+          <a
+            href={item.url ?? undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`rounded underline-offset-2 hover:underline ${focusRing}`}
+          >
+            {item.title}
+          </a>
+        </h3>
+        {showHost && <p className="text-label text-muted truncate">{host}</p>}
 
         {item.description && (
-          <p className="text-body leading-thai text-muted mt-1">
+          <p
+            lang={langOf(item.description)}
+            className="text-body leading-thai text-muted mt-1"
+          >
             {item.description}
           </p>
         )}
@@ -1171,18 +1487,20 @@ function Row({
         {item.tags.length > 0 && (
           <ul className="text-label text-muted mt-1.5 flex flex-wrap gap-x-2">
             {item.tags.map((tag) => (
-              <li key={tag}>{tag}</li>
+              <li key={tag} lang={langOf(tag)}>
+                {tag}
+              </li>
             ))}
           </ul>
         )}
       </div>
 
-      <div className="row-actions flex shrink-0 gap-1 transition-opacity duration-150">
+      <div className="row-actions col-start-2 mt-1 -ml-2 flex gap-1 transition-opacity duration-150 sm:col-start-auto sm:mt-0 sm:ml-0">
         <button
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${item.title}`}
-          className={`text-label text-muted hover:text-ink rounded px-2 py-1 ${focusRing}`}
+          className={`${quietButton} hover:text-ink`}
         >
           Edit
         </button>
@@ -1190,7 +1508,7 @@ function Row({
           type="button"
           onClick={onDelete}
           aria-label={`Delete ${item.title}`}
-          className={`text-label text-muted hover:text-danger rounded px-2 py-1 ${focusRing}`}
+          className={`${quietButton} hover:text-danger`}
         >
           Delete
         </button>
@@ -1199,35 +1517,23 @@ function Row({
   );
 }
 
-// A landscape 112×64 leading tile on every row keeps the title column aligned —
-// the mistake the first preview attempt made was giving tools a thumbnail and
-// formulas none. Framed at the og:image's ~1.9:1 aspect (the 1200×630 spec
-// default), so a real share image fills it. But og:images vary — square logos,
-// portraits — so the image is object-contain, not cover: an odd ratio letterboxes
-// on the tile bg and stays whole, instead of cropping to an unrecognizable
-// sliver. Tool: og:image, falling back to a host-letter monogram. Formula: a
-// terminal glyph, since a command has no page to show. Decorative throughout —
-// the title carries the meaning, so the tile is aria-hidden.
+// A landscape leading tile on every tool row keeps the title column aligned:
+// 112×64 from sm, 64×36 on phones where the title needs the width. Framed at
+// the og:image's ~1.9:1 aspect (the 1200×630 spec default), so a real share
+// image fills it. But og:images vary — square logos, portraits — so the image
+// is object-contain, not cover: an odd ratio letterboxes on the tile bg and
+// stays whole, instead of cropping to an unrecognizable sliver. Falls back to a
+// host-letter monogram. Decorative throughout — the title carries the meaning,
+// so the tile is aria-hidden.
 const tileBase =
-  "grid h-16 w-28 shrink-0 place-items-center overflow-hidden rounded border border-border bg-surface";
+  "grid h-9 w-16 shrink-0 place-items-center overflow-hidden rounded border border-border bg-surface sm:h-16 sm:w-28";
 
-function RowTile({ item }: { item: Item }) {
+function RowTile({ item, className = "" }: { item: Item; className?: string }) {
   const [broken, setBroken] = useState(false);
-
-  if (item.kind === "formula") {
-    return (
-      <div
-        className={`${tileBase} text-title text-muted font-mono`}
-        aria-hidden="true"
-      >
-        $_
-      </div>
-    );
-  }
 
   if (item.image && !broken) {
     return (
-      <div className={tileBase}>
+      <div className={`${tileBase} ${className}`}>
         {/* eslint-disable-next-line @next/next/no-img-element -- previews come
             from arbitrary bookmarked hosts that can't be enumerated for
             next/image's remotePatterns; a plain <img> loads from the origin. */}
@@ -1236,6 +1542,9 @@ function RowTile({ item }: { item: Item }) {
           alt=""
           aria-hidden="true"
           loading="lazy"
+          decoding="async"
+          // The bookmarked host learns nothing about where it's being shown.
+          referrerPolicy="no-referrer"
           width={112}
           height={64}
           onError={() => setBroken(true)}
@@ -1248,7 +1557,7 @@ function RowTile({ item }: { item: Item }) {
   const letter = (hostOf(item.url ?? item.title)[0] ?? "•").toUpperCase();
   return (
     <div
-      className={`${tileBase} text-headline text-ink font-serif`}
+      className={`${tileBase} text-title sm:text-headline text-ink font-serif ${className}`}
       aria-hidden="true"
     >
       {letter}
@@ -1257,11 +1566,11 @@ function RowTile({ item }: { item: Item }) {
 }
 
 // The preview pane — the right column of the desktop master–detail. It shows
-// the selected item at full size: the og:image the row can only thumbnail, the
-// untruncated title, and the primary action (open a tool, copy a formula). This
-// is what earns the second column its width. A rail with no real job here would
-// be the SaaS filler the product bans, so the pane holds the actions the lean
-// desktop rows dropped. Hidden below lg, where there's no room for it.
+// the selected tool at full size: the og:image the row can only thumbnail, the
+// untruncated title, and the primary action (open it). This is what earns the
+// second column its width. A rail with no real job here would be the SaaS
+// filler the product bans, so the pane holds the actions the lean desktop rows
+// dropped. Hidden below lg, where there's no room for it.
 function DetailPane({
   item,
   containerRef,
@@ -1277,13 +1586,25 @@ function DetailPane({
     <aside
       ref={containerRef}
       aria-label="Preview"
+      // Esc hands focus back to the row this pane is showing, the way Enter
+      // came in. preventDefault keeps the page's Esc (clear search) out of it.
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        document
+          .querySelector<HTMLElement>('#kind-panel [aria-current="true"]')
+          ?.focus();
+      }}
       // self-start keeps the aside content-height; without it the flex row
       // stretches it to the full list height, leaving sticky no room to travel.
       className="hidden lg:sticky lg:top-10 lg:flex lg:w-96 lg:shrink-0 lg:flex-col lg:gap-4 lg:self-start"
     >
       <PreviewTile item={item} />
 
-      <h2 className="text-display leading-thai text-ink font-serif text-balance">
+      <h2
+        lang={langOf(item.title)}
+        className="text-display leading-thai text-ink font-serif text-balance break-words"
+      >
         {item.title}
       </h2>
 
@@ -1303,26 +1624,31 @@ function DetailPane({
         </div>
       )}
 
-      {item.cmd && <CommandBlock cmd={item.cmd} />}
-
       {item.description && (
-        <p className="text-body leading-thai text-ink">{item.description}</p>
+        <p
+          lang={langOf(item.description)}
+          className="text-body leading-thai text-ink"
+        >
+          {item.description}
+        </p>
       )}
 
       {item.tags.length > 0 && (
         <ul className="text-label text-muted flex flex-wrap gap-x-2 gap-y-1">
           {item.tags.map((tag) => (
-            <li key={tag}>{tag}</li>
+            <li key={tag} lang={langOf(tag)}>
+              {tag}
+            </li>
           ))}
         </ul>
       )}
 
-      <div className="mt-1 flex gap-1">
+      <div className="mt-1 -ml-2 flex gap-1">
         <button
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${item.title}`}
-          className={`text-label text-muted hover:text-ink rounded px-2 py-1 ${focusRing}`}
+          className={`${quietButton} hover:text-ink`}
         >
           Edit
         </button>
@@ -1330,7 +1656,7 @@ function DetailPane({
           type="button"
           onClick={onDelete}
           aria-label={`Delete ${item.title}`}
-          className={`text-label text-muted hover:text-danger rounded px-2 py-1 ${focusRing}`}
+          className={`${quietButton} hover:text-danger`}
         >
           Delete
         </button>
@@ -1340,22 +1666,11 @@ function DetailPane({
 }
 
 // Full-size counterpart to RowTile: the og:image at a readable size, or the same
-// monogram / terminal-glyph fallbacks scaled up to the pane's ~1.9:1 frame.
+// monogram fallback scaled up to the pane's ~1.9:1 frame.
 function PreviewTile({ item }: { item: Item }) {
   const [broken, setBroken] = useState(false);
   const base =
     "grid aspect-[1.9] w-full place-items-center overflow-hidden rounded border border-border bg-surface";
-
-  if (item.kind === "formula") {
-    return (
-      <div
-        className={`${base} text-display text-muted font-mono`}
-        aria-hidden="true"
-      >
-        $_
-      </div>
-    );
-  }
 
   if (item.image && !broken) {
     return (
@@ -1366,7 +1681,9 @@ function PreviewTile({ item }: { item: Item }) {
           src={item.image}
           alt=""
           aria-hidden="true"
-          loading="lazy"
+          // Above the fold whenever the pane shows, so it loads eagerly.
+          decoding="async"
+          referrerPolicy="no-referrer"
           onError={() => setBroken(true)}
           className="h-full w-full object-contain"
         />
@@ -1385,79 +1702,48 @@ function PreviewTile({ item }: { item: Item }) {
   );
 }
 
-function CommandBlock({ cmd }: { cmd: string }) {
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(cmd);
-      setState("copied");
-    } catch {
-      // Clipboard rejects on denied permission and does not exist outside a
-      // secure context.
-      setState("failed");
-    }
-    setTimeout(() => setState("idle"), 2000);
-  }
-
-  return (
-    <div className="bg-surface mt-1.5 flex items-start gap-2 rounded px-3 py-2">
-      <code className="text-body text-ink min-w-0 flex-1 overflow-x-auto font-mono whitespace-pre">
-        {cmd}
-      </code>
-      <button
-        type="button"
-        onClick={copy}
-        aria-label="Copy command"
-        className={`text-label shrink-0 rounded px-1.5 py-0.5 ${focusRing} ${
-          state === "copied"
-            ? "text-accent"
-            : state === "failed"
-              ? "text-danger"
-              : "text-muted hover:text-ink"
-        }`}
-      >
-        {/* The color reinforces a word+mark — teal confirm, danger fail — so the
-            state never rides on color alone. */}
-        {state === "copied"
-          ? "✓ Copied"
-          : state === "failed"
-            ? "✕ Failed"
-            : "Copy"}
-      </button>
-      {/* The label stays short (no 8000-char command read aloud); this live
-          region is what tells a screen reader the copy happened. */}
-      <span role="status" className="sr-only">
-        {state === "copied"
-          ? "Copied"
-          : state === "failed"
-            ? "Copy failed"
-            : ""}
-      </span>
-    </div>
-  );
-}
-
 function Empty({
   hasItems,
+  query,
+  filtered,
   onAdd,
   onClear,
+  onSaveQuery,
 }: {
   hasItems: boolean;
+  query: string;
+  filtered: boolean;
   onAdd: () => void;
   onClear: () => void;
+  onSaveQuery: () => void;
 }) {
   if (hasItems) {
     return (
       <div className="mt-16 text-center">
         <p className="text-title text-ink font-serif">Nothing matches that.</p>
-        <button
-          type="button"
-          onClick={onClear}
-          className={`text-label text-accent mt-2 underline underline-offset-2 ${focusRing}`}
-        >
-          Clear the filters
-        </button>
+        <div className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1">
+          <button
+            type="button"
+            onClick={onClear}
+            className={`text-label text-accent rounded underline underline-offset-2 ${focusRing}`}
+          >
+            {query && filtered
+              ? "Clear search and filters"
+              : query
+                ? "Clear the search"
+                : "Clear the filters"}
+          </button>
+          {/* Not finding it is the cue to save it. */}
+          {query && (
+            <button
+              type="button"
+              onClick={onSaveQuery}
+              className={`text-label text-accent max-w-full truncate rounded underline underline-offset-2 ${focusRing}`}
+            >
+              Save “{query}”
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -1472,7 +1758,8 @@ function Empty({
         <strong className="text-ink font-semibold">formula</strong> is a command
         you keep re-deriving.
       </p>
-      <p className="text-body text-muted mt-4">
+      {/* Keyboard shortcuts mean nothing on a phone. */}
+      <p className="text-body text-muted mt-4 pointer-coarse:hidden">
         Press{" "}
         <kbd className="border-border text-label rounded border px-1.5 py-0.5">
           a
@@ -1498,78 +1785,29 @@ function Empty({
 // a content-structure beat that deliberately carries more weight than the muted
 // filter-furniture (the rail's "Kind"/"Tags" headings), so the list reads as
 // grouped at a glance. Still sentence-case sans, not the banned eyebrow. The
-// count stays muted so the name leads.
+// count stays muted so the name leads. `quiet` keeps it for screen readers only
+// when a single-kind tab already says what the list holds, so the heading
+// outline (h2 section, h3 items) holds in every view.
 function SectionHeading({
   count,
+  quiet,
   children,
 }: {
   count: number;
+  quiet: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className="border-border mb-4 flex items-baseline gap-2 border-b pb-2">
+    <div
+      className={
+        quiet
+          ? "sr-only"
+          : "border-border mb-4 flex items-baseline gap-2 border-b pb-2"
+      }
+    >
       <h2 className="text-label text-ink font-semibold">{children}</h2>
       <span className="text-label text-muted tabular-nums">{count}</span>
     </div>
-  );
-}
-
-// Clipboard write with a two-second, word-plus-mark confirmation. The color
-// reinforces the mark — term-accent teal on success, danger-rose on failure —
-// so state never rides on color alone. Terminal-only: it owns its term-* tones
-// and the caller passes layout/focus classes. `className` stays free of color.
-export function CopyButton({
-  text,
-  className,
-}: {
-  text: string;
-  className: string;
-}) {
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setState("copied");
-    } catch {
-      // Clipboard rejects on denied permission and does not exist outside a
-      // secure context.
-      setState("failed");
-    }
-    setTimeout(() => setState("idle"), 2000);
-  }
-
-  const tone =
-    state === "copied"
-      ? "text-term-accent"
-      : state === "failed"
-        ? "text-term-danger"
-        : "text-term-muted hover:text-term-ink";
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={copy}
-        aria-label="Copy command"
-        className={`${tone} ${className}`}
-      >
-        {state === "copied"
-          ? "✓ Copied"
-          : state === "failed"
-            ? "✕ Failed"
-            : "Copy"}
-      </button>
-      {/* The label stays short (no 8000-char command read aloud); this live
-            region is what tells a screen reader the copy happened. */}
-      <span role="status" className="sr-only">
-        {state === "copied"
-          ? "Copied"
-          : state === "failed"
-            ? "Copy failed"
-            : ""}
-      </span>
-    </>
   );
 }
 
@@ -1579,9 +1817,6 @@ export function CopyButton({
 // formula. Three monochrome dots read as a window without dragging the garish
 // traffic-light primaries into a cool-neutral palette. Edit/Delete ride the
 // same hover-reveal .row-actions as a tool row; on touch they stay visible.
-// ponytail: with formulae routed here, the formula branches in Row/RowTile/
-// DetailPane/CommandBlock now only ever see tools. Left in place, not deleted —
-// they still correctly render a formula if anything ever selects one.
 function FormulaCard({
   item,
   onEdit,
@@ -1591,23 +1826,37 @@ function FormulaCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const cmd = item.cmd ?? "";
+  // A title left blank defaults to the command's first line; printing it in
+  // the title bar too would show the command twice.
+  const defaulted = item.title === titleOr("", null, cmd);
+
   return (
-    <li className="row group border-term-border overflow-hidden rounded-lg border">
-      <div className="bg-term-surface flex items-center gap-3 px-3 py-2">
+    <li className="row group term border-term-border overflow-hidden rounded-lg border">
+      {/* The title takes the bar; on a phone Edit/Delete wrap beneath it
+          rather than squeezing it into a column of three-word lines. */}
+      <div className="bg-term-surface flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
         <span aria-hidden="true" className="flex shrink-0 gap-1.5">
           <span className="bg-term-border size-2.5 rounded-full" />
           <span className="bg-term-border size-2.5 rounded-full" />
           <span className="bg-term-border size-2.5 rounded-full" />
         </span>
-        <h2 className="text-label text-term-muted min-w-0 flex-1 truncate font-mono">
+        <h3
+          lang={langOf(item.title)}
+          className={
+            defaulted
+              ? "sr-only"
+              : "text-label text-term-muted min-w-0 flex-[1_1_10rem] font-mono break-words"
+          }
+        >
           {item.title}
-        </h2>
-        <div className="row-actions flex shrink-0 gap-1 transition-opacity duration-150">
+        </h3>
+        <div className="row-actions ml-auto flex shrink-0 gap-1 transition-opacity duration-150">
           <button
             type="button"
             onClick={onEdit}
             aria-label={`Edit ${item.title}`}
-            className="text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent rounded px-2 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className={`text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
           >
             Edit
           </button>
@@ -1615,7 +1864,7 @@ function FormulaCard({
             type="button"
             onClick={onDelete}
             aria-label={`Delete ${item.title}`}
-            className="text-label text-term-muted hover:text-term-danger focus-visible:outline-term-accent rounded px-2 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className={`text-label text-term-muted hover:text-term-danger focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
           >
             Delete
           </button>
@@ -1630,17 +1879,21 @@ function FormulaCard({
           >
             ❯
           </span>
-          <code className="text-body text-term-ink min-w-0 flex-1 overflow-x-auto font-mono leading-relaxed whitespace-pre">
-            {item.cmd}
+          {/* Never wraps; scroll-fade dims the edge that has more to scroll. */}
+          <code className="text-body text-term-ink scroll-fade min-w-0 flex-1 overflow-x-auto font-mono leading-relaxed whitespace-pre">
+            {cmd}
           </code>
           <CopyButton
-            text={item.cmd ?? ""}
-            className="text-label focus-visible:outline-term-accent shrink-0 rounded px-1.5 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2"
+            text={cmd}
+            className={`text-label focus-visible:outline-term-accent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
           />
         </div>
 
         {item.description && (
-          <p className="text-label text-term-muted mt-2 pl-6 font-mono">
+          <p
+            lang={langOf(item.description)}
+            className="text-label text-term-muted mt-2 pl-6 font-mono"
+          >
             # {item.description}
           </p>
         )}
@@ -1648,7 +1901,9 @@ function FormulaCard({
         {item.tags.length > 0 && (
           <ul className="text-label text-term-muted mt-2 flex flex-wrap gap-x-3 pl-6 font-mono">
             {item.tags.map((tag) => (
-              <li key={tag}>#{tag}</li>
+              <li key={tag} lang={langOf(tag)}>
+                #{tag}
+              </li>
             ))}
           </ul>
         )}

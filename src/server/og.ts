@@ -32,14 +32,20 @@ export function metaContent(html: string): string | null {
 }
 
 // A few common entities show up in og:description; decode them so the preview
-// reads as text, not markup. Anything rarer is left as-is.
+// reads as text, not markup. Numeric references (`&#38;`, `&#x2014;`) decode
+// too; other named entities are left as-is. `&amp;` goes last so `&amp;lt;`
+// stays the literal text `&lt;`.
 function decodeEntities(s: string): string {
   return s
-    .replace(/&amp;/g, "&")
+    .replace(/&#(\d+);|&#x([0-9a-f]+);/gi, (match, dec?: string, hex?: string) => {
+      const code = dec ? Number(dec) : parseInt(hex!, 16);
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+    })
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#0?39;|&apos;/g, "'");
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
 }
 
 export function metaDescription(html: string): string | null {

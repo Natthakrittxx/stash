@@ -12,13 +12,45 @@ import { ThemeToggle } from "./theme-toggle";
 // two fields. Editable later if display names ever matter.
 const nameFrom = (email: string) => email.split("@")[0] ?? email;
 
+type AuthError = {
+  message: string;
+  field?: "email" | "password";
+  login?: true;
+};
+
+// better-auth's messages are library copy ("User already exists. Use another
+// email."). Say what happened in the product's voice, and point at the way out.
+function explain(error: { code?: string; message?: string }): AuthError {
+  switch (error.code) {
+    case "USER_ALREADY_EXISTS":
+    case "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL":
+      return {
+        message: "There's already a stash for that email.",
+        field: "email",
+        login: true,
+      };
+    case "INVALID_EMAIL_OR_PASSWORD":
+      return { message: "That email and password don't match." };
+    case "INVALID_EMAIL":
+      return { message: "That email doesn't look right.", field: "email" };
+    case "PASSWORD_TOO_SHORT":
+      return { message: "Use at least 8 characters.", field: "password" };
+    default:
+      return { message: error.message ?? "That didn't work. Try again." };
+  }
+}
+
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AuthError | null>(null);
   const [pending, setPending] = useState(false);
 
   const isSignup = mode === "signup";
 
-  async function onEmail(formData: FormData) {
+  // onSubmit, not <form action>: React resets an action form once it settles,
+  // which would wipe the email and password on every failed attempt.
+  async function onEmail(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
     setError(null);
     setPending(true);
 
@@ -35,7 +67,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
     if (error) {
       setPending(false);
-      setError(error.message ?? "That didn't work.");
+      setError(explain(error));
       return;
     }
     // Email auth sets the session cookie in place (no provider redirect), so send
@@ -54,7 +86,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
     if (error) {
       setPending(false);
-      setError(error.message ?? "That didn't work.");
+      setError(explain(error));
     }
     // On success the browser redirects to Google; no navigation needed here.
   }
@@ -64,10 +96,14 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       <div className="fixed top-4 right-4">
         <ThemeToggle />
       </div>
-      <p className="text-body text-accent flex items-center gap-2 font-medium tracking-tight">
-        <StashMark className="size-6 rounded-[1.4px]" />
+      {/* The app's own wordmark (serif, ink), and the way back to the landing. */}
+      <Link
+        href="/"
+        className="text-title text-ink focus-visible:outline-accent flex w-fit items-center gap-2 rounded font-serif leading-none focus-visible:outline-2 focus-visible:outline-offset-2"
+      >
+        <StashMark className="size-[1.1em] rounded-[2px]" />
         Stash
-      </p>
+      </Link>
       <h1 className="text-headline text-ink mt-2 font-serif">
         {isSignup ? "Start a stash" : "Open your stash"}
       </h1>
@@ -78,12 +114,23 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       </p>
 
       {error && (
-        <p role="alert" className="text-label text-danger mt-6">
+        <p id="auth-error" role="alert" className="text-label text-danger mt-6">
           <span aria-hidden="true">✕ </span>
-          {error}
+          {error.message}
+          {error.login && (
+            <>
+              {" "}
+              <Link
+                href="/login"
+                className="text-accent focus-visible:outline-accent rounded underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                Log in instead
+              </Link>
+            </>
+          )}
         </p>
       )}
-      <form action={onEmail} className="mt-8 flex flex-col gap-3">
+      <form onSubmit={onEmail} className="mt-8 flex flex-col gap-3">
         <label className="text-label text-muted flex flex-col gap-1">
           Email
           <input
@@ -91,6 +138,8 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
             type="email"
             required
             autoComplete="email"
+            aria-invalid={error?.field === "email" || undefined}
+            aria-describedby={error ? "auth-error" : undefined}
             className="border-field bg-bg text-body text-ink focus-visible:border-accent focus-visible:outline-accent rounded border px-3 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
           />
         </label>
@@ -102,8 +151,16 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
             required
             minLength={8}
             autoComplete={isSignup ? "new-password" : "current-password"}
+            aria-invalid={error?.field === "password" || undefined}
+            aria-describedby={
+              [isSignup && "password-hint", error && "auth-error"]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
             className="border-field bg-bg text-body text-ink focus-visible:border-accent focus-visible:outline-accent rounded border px-3 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
           />
+          {/* The rule up front, not as a browser bubble after the first try. */}
+          {isSignup && <span id="password-hint">At least 8 characters.</span>}
         </label>
         <button
           type="submit"
@@ -119,7 +176,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         {isSignup ? "Already have a stash? " : "Need a stash? "}
         <Link
           href={isSignup ? "/login" : "/signup"}
-          className="text-accent hover:underline"
+          className="text-accent focus-visible:outline-accent rounded underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           {isSignup ? "Log in" : "Sign up"}
         </Link>

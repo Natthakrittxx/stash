@@ -1,3 +1,5 @@
+import "server-only";
+
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 
@@ -14,6 +16,10 @@ export const auth = betterAuth({
   // sign up with a password, and Google won't link onto it (see below). Add a
   // mailer and requireEmailVerification if strangers ever get signup access.
   emailAndPassword: { enabled: true },
+  // Every page load and server action reads the session. A short signed cookie
+  // cache answers that without a DB round trip; a revoked session can outlive
+  // its revocation by up to this maxAge. Sign out clears the cookie at once.
+  session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
   socialProviders: {
     google: {
       clientId: env.GOOGLE_CLIENT_ID,

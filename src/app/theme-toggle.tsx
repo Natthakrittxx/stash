@@ -4,24 +4,35 @@ import { useEffect, useState } from "react";
 
 type Theme = "light" | "dark";
 
+const dark = "(prefers-color-scheme: dark)";
+
 function systemTheme(): Theme {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
+  return window.matchMedia(dark).matches ? "dark" : "light";
 }
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme | null>(null);
 
-  // The server can't know the resolved theme, so render nothing until mounted —
-  // this both avoids a hydration mismatch and lets us read the choice the inline
-  // head script already applied.
+  // The server can't know the resolved theme, so the button mounts empty and
+  // reads the choice the inline head script already applied. Until no choice is
+  // stored, it follows the OS live so the label never names the current theme.
   useEffect(() => {
     const stored = localStorage.getItem("theme");
-    setTheme(stored === "light" || stored === "dark" ? stored : systemTheme());
+    if (stored === "light" || stored === "dark") return setTheme(stored);
+    setTheme(systemTheme());
+    const mq = window.matchMedia(dark);
+    const follow = () => {
+      if (!localStorage.getItem("theme")) setTheme(systemTheme());
+    };
+    mq.addEventListener("change", follow);
+    return () => mq.removeEventListener("change", follow);
   }, []);
 
-  if (!theme) return null;
+  const box =
+    "grid h-9 w-9 shrink-0 place-items-center rounded text-muted transition-colors duration-150 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+
+  // Same footprint before mount, so the header never shifts when it appears.
+  if (!theme) return <span aria-hidden="true" className={box} />;
 
   const next = theme === "dark" ? "light" : "dark";
 
@@ -36,7 +47,7 @@ export function ThemeToggle() {
       type="button"
       onClick={toggle}
       aria-label={`Switch to ${next} theme`}
-      className="grid h-9 w-9 place-items-center rounded text-muted transition-colors duration-150 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className={box}
     >
       {theme === "dark" ? <SunIcon /> : <MoonIcon />}
     </button>
