@@ -10,7 +10,7 @@ web
 
 ## Users
 
-The maintainer and a small circle of trusted people — not strangers, not an org. Everyone here already knows what a stash is for; nobody arrives needing to be sold on it.
+Stash is open source and anyone may run an instance. Each instance serves its operator and a small circle of trusted people they invite — not strangers, not an org. Everyone here already knows what a stash is for; nobody arrives needing to be sold on it.
 
 They reach for stash mid-stream: reading something, finding a link, wanting it gone from their attention but not lost. Capture happens in seconds, usually as an interruption to something else. Retrieval happens later, deliberately, when they're looking for a thing they know they saved.
 

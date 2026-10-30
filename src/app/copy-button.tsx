@@ -11,9 +11,11 @@ import { useState } from "react";
 export function CopyButton({
   text,
   className,
+  label = "Copy command",
 }: {
   text: string;
   className: string;
+  label?: string;
 }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
@@ -41,7 +43,7 @@ export function CopyButton({
       <button
         type="button"
         onClick={copy}
-        aria-label="Copy command"
+        aria-label={label}
         className={`${tone} ${className}`}
       >
         {state === "copied"

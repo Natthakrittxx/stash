@@ -29,6 +29,13 @@
       "when": 1793117270645,
       "tag": "0003_eminent_sway",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793367160387,
+      "tag": "0004_instance_owner_and_invites",
+      "breakpoints": true
     }
   ]
 }

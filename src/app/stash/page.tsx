@@ -63,6 +63,7 @@ export default async function StashPage() {
           .map((l) => l.itemId),
       }))}
       name={session.user.name}
+      isOwner={session.user.isOwner}
       initialWide={jar.get("wide")?.value === "1"}
       initialRailOpen={jar.get("rail")?.value !== "closed"}
     />

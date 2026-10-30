@@ -1,0 +1,11 @@
+# Layered over compose.yml by the running-instance test: the same instance, built
+# from this checkout, on its own port. No restart, so a failed boot stays failed.
+services:
+  app:
+    image: stash:instance-test
+    build: .
+    restart: "no"
+    ports: !override
+      - "127.0.0.1:3999:3000"
+    environment:
+      BETTER_AUTH_URL: http://localhost:3999

@@ -1,0 +1,50 @@
+# Everything an instance needs is set here. There is no .env file.
+services:
+  app:
+    # Pin a version tag such as :v0.1.0 to choose when you upgrade.
+    image: ghcr.io/natthakrittxx/stash:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # The address people use to reach this instance. Login breaks if it's wrong.
+      # Anything public needs HTTPS: see "HTTPS" in the README.
+      BETTER_AUTH_URL: http://localhost:3000
+
+      # To use your own PostgreSQL 13+ instead of the bundled one, in a database
+      # used only by stash:
+      #   1. Change DATABASE_URL below, adding ?sslmode=require if your host needs it.
+      #   2. Delete the `depends_on` block under `app`.
+      #   3. Delete the `db` service and the `stash-db` volume.
+      DATABASE_URL: postgresql://stash:stash@db:5432/stash
+
+      # Optional Google login: set both, or leave both empty.
+      GOOGLE_CLIENT_ID: ""
+      GOOGLE_CLIENT_SECRET: ""
+    volumes:
+      # Holds the auth secret, which is generated on first boot.
+      - stash-secret:/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    # No published port: this fixed password is only reachable inside this
+    # compose network. Change the password before ever publishing a port.
+    environment:
+      POSTGRES_USER: stash
+      POSTGRES_PASSWORD: stash
+      POSTGRES_DB: stash
+    volumes:
+      - stash-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stash -d stash"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  stash-secret:
+  stash-db:

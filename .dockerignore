@@ -1,0 +1,15 @@
+# Never let a local secret reach an image layer.
+.env*
+.git
+.github
+.next
+node_modules
+.impeccable
+.playwright-mcp
+.scratch
+bundled
+docs
+test
+*.md
+compose*.yml
+Dockerfile

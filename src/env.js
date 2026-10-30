@@ -12,9 +12,17 @@ export const env = createEnv({
         ? z.string()
         : z.string().optional(),
     BETTER_AUTH_URL: z.string().url().default("http://localhost:3000"),
-    GOOGLE_CLIENT_ID: z.string(),
-    GOOGLE_CLIENT_SECRET: z.string(),
-    DATABASE_URL: z.string().url(),
+    GOOGLE_CLIENT_ID: z.string().optional(),
+    GOOGLE_CLIENT_SECRET: z.string().optional(),
+    // The default matches compose.dev.yml. Production has no default, so a
+    // misconfigured instance fails instead of quietly looking elsewhere.
+    DATABASE_URL:
+      process.env.NODE_ENV === "production"
+        ? z.string().url()
+        : z
+            .string()
+            .url()
+            .default("postgresql://postgres:password@127.0.0.1:55432/stash"),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -52,3 +60,8 @@ export const env = createEnv({
    */
   emptyStringAsUndefined: true,
 });
+
+// Half a Google setup would boot fine and only fail when someone clicks the button.
+if (!env.GOOGLE_CLIENT_ID !== !env.GOOGLE_CLIENT_SECRET) {
+  throw new Error("Set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither.");
+}
