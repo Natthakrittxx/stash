@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { INVITE_COOKIE } from "~/invite";
 import { authClient } from "~/server/better-auth/client";
 
 import { StashMark } from "./stash-mark";
@@ -13,9 +14,14 @@ import { fieldFocus } from "./stash/ui";
 // two fields. Editable later if display names ever matter.
 const nameFrom = (email: string) => email.split("@")[0] ?? email;
 
+// Ten minutes covers a trip to Google and back. Scoped to the auth endpoints:
+// the signup hook is the only thing that reads it.
+const rememberInvite = (code: string) =>
+  (document.cookie = `${INVITE_COOKIE}=${encodeURIComponent(code.trim())};path=/api/auth;max-age=600;samesite=lax${location.protocol === "https:" ? ";secure" : ""}`);
+
 type AuthError = {
   message: string;
-  field?: "email" | "password";
+  field?: "email" | "password" | "invite";
   login?: true;
 };
 
@@ -23,6 +29,12 @@ type AuthError = {
 // email."). Say what happened in the product's voice, and point at the way out.
 function explain(error: { code?: string; message?: string }): AuthError {
   switch (error.code) {
+    case "INVITE_REQUIRED":
+      return {
+        message:
+          "That needs a working invite code. Ask whoever runs this stash for a new one.",
+        field: "invite",
+      };
     case "USER_ALREADY_EXISTS":
     case "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL":
       return {
@@ -41,9 +53,21 @@ function explain(error: { code?: string; message?: string }): AuthError {
   }
 }
 
-export function AuthForm({ mode }: { mode: "login" | "signup" }) {
-  const [error, setError] = useState<AuthError | null>(null);
+export function AuthForm({
+  mode,
+  google,
+  oauthError,
+}: {
+  mode: "login" | "signup";
+  google: boolean;
+  // `?error=` from a Google sign-in that came back refused.
+  oauthError?: string;
+}) {
+  const [error, setError] = useState<AuthError | null>(
+    oauthError ? explain({ code: oauthError.toUpperCase() }) : null,
+  );
   const [pending, setPending] = useState(false);
+  const [invite, setInvite] = useState("");
 
   const isSignup = mode === "signup";
 
@@ -57,6 +81,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
+    if (isSignup) rememberInvite(invite);
     // Signup signs in straight away; there is no verification step.
     const { error } = isSignup
       ? await authClient.signUp.email({
@@ -77,12 +102,18 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   }
 
   async function onGoogle() {
+    if (isSignup && !invite.trim()) {
+      setError(explain({ code: "INVITE_REQUIRED" }));
+      return;
+    }
     setError(null);
     setPending(true);
 
+    if (isSignup) rememberInvite(invite);
     const { error } = await authClient.signIn.social({
       provider: "google",
       callbackURL: "/stash",
+      errorCallbackURL: `/${mode}`,
     });
 
     if (error) {
@@ -132,6 +163,27 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         </p>
       )}
       <form onSubmit={onEmail} className="mt-8 flex flex-col gap-3">
+        {isSignup && (
+          <label className="text-label text-muted flex flex-col gap-1">
+            Invite code
+            <input
+              name="invite"
+              required
+              autoComplete="off"
+              spellCheck={false}
+              value={invite}
+              onChange={(event) => setInvite(event.target.value)}
+              aria-invalid={error?.field === "invite" || undefined}
+              aria-describedby={
+                ["invite-hint", error && "auth-error"]
+                  .filter(Boolean)
+                  .join(" ")
+              }
+              className={`border-field bg-bg text-body text-ink rounded border px-3 py-2 font-mono transition-colors duration-150 ${fieldFocus}`}
+            />
+            <span id="invite-hint">Ask whoever runs this stash.</span>
+          </label>
+        )}
         <label className="text-label text-muted flex flex-col gap-1">
           Email
           <input
@@ -183,39 +235,43 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         </Link>
       </p>
 
-      <div className="text-label text-muted mt-6 flex items-center gap-3">
-        <span className="bg-border h-px flex-1" />
-        or
-        <span className="bg-border h-px flex-1" />
-      </div>
+      {google && (
+        <>
+          <div className="text-label text-muted mt-6 flex items-center gap-3">
+            <span className="bg-border h-px flex-1" />
+            or
+            <span className="bg-border h-px flex-1" />
+          </div>
 
-      <button
-        type="button"
-        onClick={onGoogle}
-        disabled={pending}
-        aria-busy={pending}
-        className="border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent mt-6 flex items-center justify-center gap-2 rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60"
-      >
-        <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5">
-          <path
-            fill="#4285F4"
-            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1Z"
-          />
-          <path
-            fill="#34A853"
-            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z"
-          />
-          <path
-            fill="#FBBC05"
-            d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84Z"
-          />
-          <path
-            fill="#EA4335"
-            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38Z"
-          />
-        </svg>
-        {pending ? "One moment…" : "Continue with Google"}
-      </button>
+          <button
+            type="button"
+            onClick={onGoogle}
+            disabled={pending}
+            aria-busy={pending}
+            className="border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent mt-6 flex items-center justify-center gap-2 rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1Z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84Z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38Z"
+              />
+            </svg>
+            {pending ? "One moment…" : "Continue with Google"}
+          </button>
+        </>
+      )}
     </main>
   );
 }

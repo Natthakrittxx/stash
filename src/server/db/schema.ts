@@ -8,6 +8,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -100,21 +101,42 @@ export const collectionItems = pgTable(
   (t) => [primaryKey({ columns: [t.collectionId, t.itemId] })],
 );
 
-export const user = pgTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified")
-    .$defaultFn(() => false)
-    .notNull(),
-  image: text("image"),
-  createdAt: timestamp("created_at")
-    .$defaultFn(() => /* @__PURE__ */ new Date())
-    .notNull(),
-  updatedAt: timestamp("updated_at")
-    .$defaultFn(() => /* @__PURE__ */ new Date())
-    .notNull(),
-});
+export const user = pgTable(
+  "user",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    email: text("email").notNull().unique(),
+    emailVerified: boolean("email_verified")
+      .$defaultFn(() => false)
+      .notNull(),
+    image: text("image"),
+    createdAt: timestamp("created_at")
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: timestamp("updated_at")
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    isOwner: boolean("is_owner").notNull().default(false),
+  },
+  (t) => [uniqueIndex("user_one_owner").on(t.isOwner).where(sql`is_owner`)],
+);
+
+// Unused codes only: redeeming or revoking one deletes its row, so a row
+// existing is what makes a code valid.
+export const inviteCodes = pgTable(
+  "invite_code",
+  {
+    code: text("code").primaryKey(),
+    isSetup: boolean("is_setup").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("invite_code_one_setup").on(t.isSetup).where(sql`is_setup`),
+  ],
+);
 
 export const session = pgTable("session", {
   id: text("id").primaryKey(),

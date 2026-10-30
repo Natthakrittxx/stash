@@ -4,12 +4,13 @@
  * field is optional: a missing image or description is never an error, so every
  * path that can throw collapses to null.
  *
- * ponytail: SSRF ceiling. This fetches a user-supplied URL server-side, so a
- * saved `http://169.254.169.254/` or an internal host would be reached. The
- * threat model is a small circle of trusted people (PRODUCT.md), and only
- * parsed og:* meta values are ever stored — the response body is never
- * returned. Block private/link-local ranges here before this serves strangers.
+ * This fetches a user-supplied URL server-side, so it goes through safeFetch: a
+ * saved `http://169.254.169.254/` or an internal host is refused, and comes back
+ * as no preview. Only parsed og:* meta values are ever stored — the response
+ * body is never returned.
  */
+
+import { safeFetch } from "./safe-fetch";
 
 const IMAGE_KEYS = ["og:image", "og:image:url", "twitter:image", "twitter:image:src"];
 const DESC_KEYS = ["og:description", "twitter:description", "description"];
@@ -67,8 +68,7 @@ export type Preview = { image: string | null; description: string | null };
 
 export async function fetchPreview(url: string): Promise<Preview> {
   try {
-    const res = await fetch(url, {
-      redirect: "follow",
+    const res = await safeFetch(url, {
       signal: AbortSignal.timeout(5000),
       // Some hosts serve a bare page or 403 to an empty UA.
       headers: { "user-agent": "Mozilla/5.0 (compatible; StashBot/1.0)", accept: "text/html" },

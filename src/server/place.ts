@@ -6,13 +6,14 @@
  * on the map".
  *
  * Only links that pass `isMapsLink` are fetched, to follow a short link to
- * where it lands and read the page's meta. Redirects are followed like og.ts
- * follows them, so the same SSRF ceiling applies.
+ * where it lands and read the page's meta. A short link can redirect anywhere,
+ * so this goes through safeFetch like og.ts does.
  */
 
 import { coordsFromUrl, isMapsLink, nameFromUrl } from "~/maps";
 
 import { metaContent, metaTitle } from "./og";
+import { safeFetch } from "./safe-fetch";
 
 export type Place = {
   lat: number | null;
@@ -42,8 +43,7 @@ export async function resolvePlace(link: string): Promise<Place> {
   let title: string | null = null;
   let image: string | null = null;
   try {
-    const res = await fetch(link, {
-      redirect: "follow",
+    const res = await safeFetch(link, {
       signal: AbortSignal.timeout(5000),
       headers: {
         "user-agent": "Mozilla/5.0 (compatible; StashBot/1.0)",

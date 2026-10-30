@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useDeferredValue,
@@ -245,12 +246,14 @@ export function Stash({
   items: initial,
   collections: initialCollections,
   name,
+  isOwner,
   initialWide,
   initialRailOpen,
 }: {
   items: Item[];
   collections: Collection[];
   name: string;
+  isOwner: boolean;
   initialWide: boolean;
   initialRailOpen: boolean;
 }) {
@@ -980,6 +983,14 @@ export function Stash({
           {/* Identity caption yields first on narrow screens: it truncates so a
               long name never crushes the wordmark or pushes the toggle off. */}
           <span className="text-label text-muted min-w-0 truncate">{name}</span>
+          {isOwner && (
+            <Link
+              href="/invites"
+              className={`text-label text-muted hover:text-ink inline-flex h-9 shrink-0 items-center rounded px-1 font-medium ${touch} ${focusRing}`}
+            >
+              Invites
+            </Link>
+          )}
           <button
             type="button"
             disabled={signingOut}
