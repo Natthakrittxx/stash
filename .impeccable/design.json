@@ -1,52 +1,408 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-24T00:00:00Z",
+  "generatedAt": "2026-10-28T00:00:00Z",
   "title": "Design System: Stash",
   "extensions": {
     "colorMeta": {
-      "accent": { "role": "primary", "displayName": "Enamel Teal", "canonical": "#005f66", "tonalRamp": ["#00191b", "#002d30", "#004146", "#005f66", "#1f7f86", "#4ba1a7", "#8cc7cb", "#d6eeef"] },
-      "accent-dark": { "role": "primary", "displayName": "Enamel Teal (dark theme)", "canonical": "#4bc3cc", "tonalRamp": ["#0b2a2c", "#124a4e", "#1a6d73", "#24939b", "#4bc3cc", "#7ad5dc", "#aee6ea", "#e0f6f7"] },
-      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#14181a", "tonalRamp": ["#14181a", "#262c2e", "#3b4244", "#545c5e", "#727a7b", "#959c9c", "#bec3c3", "#e9eeed"] },
-      "muted": { "role": "neutral", "displayName": "Pencil", "canonical": "#5a6462", "tonalRamp": ["#1a1e1d", "#2c3332", "#424a49", "#5a6462", "#77807e", "#979f9d", "#bcc2c1", "#e5e9e8"] },
-      "bg": { "role": "neutral", "displayName": "Catalog Paper", "canonical": "#f5f7f7", "tonalRamp": ["#1e2323", "#363c3c", "#535a5a", "#737a7a", "#979d9d", "#bcc1c1", "#dfe3e3", "#f5f7f7"] },
-      "surface": { "role": "neutral", "displayName": "Drawer Grey", "canonical": "#e7ebeb", "tonalRamp": ["#1c2121", "#333a3a", "#4f5757", "#6e7676", "#919898", "#b5bbbb", "#d6dbdb", "#e7ebeb"] },
-      "border": { "role": "neutral", "displayName": "Hairline", "canonical": "#d3dad9", "tonalRamp": ["#1b2120", "#323b3a", "#4d5756", "#6b7675", "#8d9897", "#b0b9b8", "#d3dad9", "#eef1f1"] },
-      "danger": { "role": "semantic", "displayName": "Wine", "canonical": "#b02a37", "tonalRamp": ["#2e0a0e", "#4f1219", "#741b25", "#b02a37", "#cc5662", "#df8a93", "#eebcc1", "#f9e6e8"] },
-      "danger-dark": { "role": "semantic", "displayName": "Rose (dark theme)", "canonical": "#f0a0a8", "tonalRamp": ["#3a1216", "#5c1f25", "#842f38", "#b0444f", "#d76f79", "#f0a0a8", "#f6c6cb", "#fcebed"] },
-      "ink-dark": { "role": "neutral", "displayName": "Ink (dark theme)", "canonical": "#e9eeed", "tonalRamp": ["#14181a", "#262c2e", "#3b4244", "#545c5e", "#727a7b", "#959c9c", "#bec3c3", "#e9eeed"] },
-      "muted-dark": { "role": "neutral", "displayName": "Pencil (dark theme)", "canonical": "#9ba9a7", "tonalRamp": ["#1d2221", "#323a39", "#4b5654", "#677472", "#83918f", "#9ba9a7", "#c0cac9", "#e8eded"] },
-      "bg-dark": { "role": "neutral", "displayName": "Catalog Paper (dark theme)", "canonical": "#0e1413", "tonalRamp": ["#0e1413", "#172020", "#253130", "#384745", "#55625f", "#7a8584", "#a9b1b0", "#e1e6e5"] },
-      "surface-dark": { "role": "neutral", "displayName": "Drawer Grey (dark theme)", "canonical": "#172020", "tonalRamp": ["#0e1413", "#172020", "#253130", "#384745", "#55625f", "#7a8584", "#a9b1b0", "#e1e6e5"] },
-      "border-dark": { "role": "neutral", "displayName": "Hairline (dark theme)", "canonical": "#33413f", "tonalRamp": ["#0e1413", "#1c2524", "#33413f", "#4a5957", "#647371", "#828f8d", "#abb5b4", "#dde3e2"] },
-      "term-bg": { "role": "neutral", "displayName": "Console", "canonical": "#0e1413", "tonalRamp": ["#0e1413", "#172020", "#253130", "#384745", "#55625f", "#7a8584", "#a9b1b0", "#e1e6e5"] },
-      "term-surface": { "role": "neutral", "displayName": "Console Title Bar", "canonical": "#172020", "tonalRamp": ["#0e1413", "#172020", "#253130", "#384745", "#55625f", "#7a8584", "#a9b1b0", "#e1e6e5"] },
-      "term-border": { "role": "neutral", "displayName": "Console Hairline", "canonical": "#33413f", "tonalRamp": ["#0e1413", "#1c2524", "#33413f", "#4a5957", "#647371", "#828f8d", "#abb5b4", "#dde3e2"] },
-      "term-ink": { "role": "neutral", "displayName": "Console Ink", "canonical": "#e9eeed", "tonalRamp": ["#14181a", "#262c2e", "#3b4244", "#545c5e", "#727a7b", "#959c9c", "#bec3c3", "#e9eeed"] },
-      "term-muted": { "role": "neutral", "displayName": "Console Comment", "canonical": "#9ba9a7", "tonalRamp": ["#1d2221", "#323a39", "#4b5654", "#677472", "#83918f", "#9ba9a7", "#c0cac9", "#e8eded"] },
-      "term-accent": { "role": "primary", "displayName": "Console Prompt", "canonical": "#4bc3cc", "tonalRamp": ["#0b2a2c", "#124a4e", "#1a6d73", "#24939b", "#4bc3cc", "#7ad5dc", "#aee6ea", "#e0f6f7"] },
-      "term-danger": { "role": "semantic", "displayName": "Console Failure", "canonical": "#f0a0a8", "tonalRamp": ["#3a1216", "#5c1f25", "#842f38", "#b0444f", "#d76f79", "#f0a0a8", "#f6c6cb", "#fcebed"] }
+      "accent": {
+        "role": "primary",
+        "displayName": "Enamel Teal",
+        "canonical": "#005f66",
+        "tonalRamp": [
+          "#00191b",
+          "#002d30",
+          "#004146",
+          "#005f66",
+          "#1f7f86",
+          "#4ba1a7",
+          "#8cc7cb",
+          "#d6eeef"
+        ]
+      },
+      "accent-dark": {
+        "role": "primary",
+        "displayName": "Enamel Teal (dark theme)",
+        "canonical": "#4bc3cc",
+        "tonalRamp": [
+          "#0b2a2c",
+          "#124a4e",
+          "#1a6d73",
+          "#24939b",
+          "#4bc3cc",
+          "#7ad5dc",
+          "#aee6ea",
+          "#e0f6f7"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#14181a",
+        "tonalRamp": [
+          "#14181a",
+          "#262c2e",
+          "#3b4244",
+          "#545c5e",
+          "#727a7b",
+          "#959c9c",
+          "#bec3c3",
+          "#e9eeed"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Pencil",
+        "canonical": "#5a6462",
+        "tonalRamp": [
+          "#1a1e1d",
+          "#2c3332",
+          "#424a49",
+          "#5a6462",
+          "#77807e",
+          "#979f9d",
+          "#bcc2c1",
+          "#e5e9e8"
+        ]
+      },
+      "bg": {
+        "role": "neutral",
+        "displayName": "Catalog Paper",
+        "canonical": "#f5f7f7",
+        "tonalRamp": [
+          "#1e2323",
+          "#363c3c",
+          "#535a5a",
+          "#737a7a",
+          "#979d9d",
+          "#bcc1c1",
+          "#dfe3e3",
+          "#f5f7f7"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Drawer Grey",
+        "canonical": "#e7ebeb",
+        "tonalRamp": [
+          "#1c2121",
+          "#333a3a",
+          "#4f5757",
+          "#6e7676",
+          "#919898",
+          "#b5bbbb",
+          "#d6dbdb",
+          "#e7ebeb"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#d3dad9",
+        "tonalRamp": [
+          "#1b2120",
+          "#323b3a",
+          "#4d5756",
+          "#6b7675",
+          "#8d9897",
+          "#b0b9b8",
+          "#d3dad9",
+          "#eef1f1"
+        ]
+      },
+      "danger": {
+        "role": "semantic",
+        "displayName": "Wine",
+        "canonical": "#b02a37",
+        "tonalRamp": [
+          "#2e0a0e",
+          "#4f1219",
+          "#741b25",
+          "#b02a37",
+          "#cc5662",
+          "#df8a93",
+          "#eebcc1",
+          "#f9e6e8"
+        ]
+      },
+      "danger-dark": {
+        "role": "semantic",
+        "displayName": "Rose (dark theme)",
+        "canonical": "#f0a0a8",
+        "tonalRamp": [
+          "#3a1216",
+          "#5c1f25",
+          "#842f38",
+          "#b0444f",
+          "#d76f79",
+          "#f0a0a8",
+          "#f6c6cb",
+          "#fcebed"
+        ]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "Ink (dark theme)",
+        "canonical": "#e9eeed",
+        "tonalRamp": [
+          "#14181a",
+          "#262c2e",
+          "#3b4244",
+          "#545c5e",
+          "#727a7b",
+          "#959c9c",
+          "#bec3c3",
+          "#e9eeed"
+        ]
+      },
+      "muted-dark": {
+        "role": "neutral",
+        "displayName": "Pencil (dark theme)",
+        "canonical": "#9ba9a7",
+        "tonalRamp": [
+          "#1d2221",
+          "#323a39",
+          "#4b5654",
+          "#677472",
+          "#83918f",
+          "#9ba9a7",
+          "#c0cac9",
+          "#e8eded"
+        ]
+      },
+      "bg-dark": {
+        "role": "neutral",
+        "displayName": "Catalog Paper (dark theme)",
+        "canonical": "#0e1413",
+        "tonalRamp": [
+          "#0e1413",
+          "#172020",
+          "#253130",
+          "#384745",
+          "#55625f",
+          "#7a8584",
+          "#a9b1b0",
+          "#e1e6e5"
+        ]
+      },
+      "surface-dark": {
+        "role": "neutral",
+        "displayName": "Drawer Grey (dark theme)",
+        "canonical": "#172020",
+        "tonalRamp": [
+          "#0e1413",
+          "#172020",
+          "#253130",
+          "#384745",
+          "#55625f",
+          "#7a8584",
+          "#a9b1b0",
+          "#e1e6e5"
+        ]
+      },
+      "border-dark": {
+        "role": "neutral",
+        "displayName": "Hairline (dark theme)",
+        "canonical": "#33413f",
+        "tonalRamp": [
+          "#0e1413",
+          "#1c2524",
+          "#33413f",
+          "#4a5957",
+          "#647371",
+          "#828f8d",
+          "#abb5b4",
+          "#dde3e2"
+        ]
+      },
+      "term-bg": {
+        "role": "neutral",
+        "displayName": "Console",
+        "canonical": "#0e1413",
+        "tonalRamp": [
+          "#0e1413",
+          "#172020",
+          "#253130",
+          "#384745",
+          "#55625f",
+          "#7a8584",
+          "#a9b1b0",
+          "#e1e6e5"
+        ]
+      },
+      "term-surface": {
+        "role": "neutral",
+        "displayName": "Console Title Bar",
+        "canonical": "#172020",
+        "tonalRamp": [
+          "#0e1413",
+          "#172020",
+          "#253130",
+          "#384745",
+          "#55625f",
+          "#7a8584",
+          "#a9b1b0",
+          "#e1e6e5"
+        ]
+      },
+      "term-border": {
+        "role": "neutral",
+        "displayName": "Console Hairline",
+        "canonical": "#33413f",
+        "tonalRamp": [
+          "#0e1413",
+          "#1c2524",
+          "#33413f",
+          "#4a5957",
+          "#647371",
+          "#828f8d",
+          "#abb5b4",
+          "#dde3e2"
+        ]
+      },
+      "term-ink": {
+        "role": "neutral",
+        "displayName": "Console Ink",
+        "canonical": "#e9eeed",
+        "tonalRamp": [
+          "#14181a",
+          "#262c2e",
+          "#3b4244",
+          "#545c5e",
+          "#727a7b",
+          "#959c9c",
+          "#bec3c3",
+          "#e9eeed"
+        ]
+      },
+      "term-muted": {
+        "role": "neutral",
+        "displayName": "Console Comment",
+        "canonical": "#9ba9a7",
+        "tonalRamp": [
+          "#1d2221",
+          "#323a39",
+          "#4b5654",
+          "#677472",
+          "#83918f",
+          "#9ba9a7",
+          "#c0cac9",
+          "#e8eded"
+        ]
+      },
+      "term-accent": {
+        "role": "primary",
+        "displayName": "Console Prompt",
+        "canonical": "#4bc3cc",
+        "tonalRamp": [
+          "#0b2a2c",
+          "#124a4e",
+          "#1a6d73",
+          "#24939b",
+          "#4bc3cc",
+          "#7ad5dc",
+          "#aee6ea",
+          "#e0f6f7"
+        ]
+      },
+      "term-danger": {
+        "role": "semantic",
+        "displayName": "Console Failure",
+        "canonical": "#f0a0a8",
+        "tonalRamp": [
+          "#3a1216",
+          "#5c1f25",
+          "#842f38",
+          "#b0444f",
+          "#d76f79",
+          "#f0a0a8",
+          "#f6c6cb",
+          "#fcebed"
+        ]
+      }
     },
     "typographyMeta": {
-      "hero": { "displayName": "Hero", "purpose": "Landing headline only; the closing full stop is teal. The single fluid size in the system." },
-      "display": { "displayName": "Display", "purpose": "Wordmark beside the logo and the detail pane title." },
-      "headline": { "displayName": "Headline", "purpose": "Landing section headings, auth heading, row-tile monograms." },
-      "title": { "displayName": "Title", "purpose": "Row titles, empty-state lines, search field text, landing sub-line. 1.75 leading for Thai." },
-      "body": { "displayName": "Body", "purpose": "Descriptions, form fields, primary buttons, the kinds list." },
-      "label": { "displayName": "Label", "purpose": "Hosts, tags, counts, segmented controls, filter rows, toasts, footer." },
-      "command": { "displayName": "Command", "purpose": "Commands in formula cards and the detail pane." }
+      "hero": {
+        "displayName": "Hero",
+        "purpose": "Landing headline only; the closing full stop is teal. The single fluid size in the system."
+      },
+      "display": {
+        "displayName": "Display",
+        "purpose": "Wordmark beside the logo and the detail pane title."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Landing section headings, auth heading, row-tile monograms."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Row titles, empty-state lines, search field text, landing sub-line. 1.75 leading for Thai."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Descriptions, form fields, primary buttons, the kinds list."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Hosts, tags, counts, segmented controls, filter rows, toasts, footer."
+      },
+      "command": {
+        "displayName": "Command",
+        "purpose": "Commands in formula cards and the detail pane."
+      }
     },
     "shadows": [
-      { "name": "toast-float", "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)", "purpose": "Undo and error toasts only; the one element that floats over content." }
+      {
+        "name": "toast-float",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Toasts, the composer, and on the map the place card and the set-location banner: only what floats over content."
+      }
     ],
     "motion": [
-      { "name": "state", "value": "150ms (Tailwind default ease) on color and opacity", "purpose": "Hover, selection, and primary-button opacity changes." },
-      { "name": "copy-feedback", "value": "2000ms hold", "purpose": "Copied / Failed state on copy controls before reverting." },
-      { "name": "demo-autotype", "value": "900ms delay, then 120ms per character", "purpose": "Landing demo types one query when the search field is fully on screen; any input cancels it." },
-      { "name": "reduced-motion", "value": "transition and animation durations forced to 0.01ms", "purpose": "prefers-reduced-motion: reduce; the demo query appears at once." }
+      {
+        "name": "state",
+        "value": "150ms (Tailwind default ease) on color and opacity",
+        "purpose": "Hover, selection, and primary-button opacity changes."
+      },
+      {
+        "name": "copy-feedback",
+        "value": "2000ms hold",
+        "purpose": "Copied / Failed state on copy controls before reverting."
+      },
+      {
+        "name": "demo-autotype",
+        "value": "900ms delay, then 120ms per character",
+        "purpose": "Landing demo types one query when the search field is fully on screen; any input cancels it."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "transition and animation durations forced to 0.01ms",
+        "purpose": "prefers-reduced-motion: reduce; the demo query appears at once."
+      },
+      {
+        "name": "map-fit",
+        "value": "600ms max (fitBounds / easeTo); 0 under reduced motion",
+        "purpose": "Refit to matches on search, tag or collection change; ease to an off-screen selection."
+      },
+      {
+        "name": "map-zoom",
+        "value": "250ms; cluster expansion 400ms; 0 under reduced motion",
+        "purpose": "Zoom buttons and opening a cluster."
+      }
     ],
     "breakpoints": [
-      { "name": "sm", "value": "640px" },
-      { "name": "lg", "value": "1024px" }
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "map-narrow",
+        "value": "480px (map container width)",
+        "purpose": "Below it the place card sits above its pin at the map width less 32px."
+      }
     ]
   },
   "components": [
@@ -121,6 +477,30 @@
       "description": "Fixed-bottom undo or error notice; the only shadowed element.",
       "html": "<div class=\"ds-toast\"><span>Deleted “Squoosh”.</span><button class=\"ds-toast-undo\">Undo</button></div>",
       "css": ".ds-toast { display: flex; align-items: center; justify-content: space-between; gap: 16px; max-width: 24rem; padding: 12px 16px; background: var(--color-surface, #e7ebeb); border: 1px solid var(--color-border, #d3dad9); border-radius: 4px; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); font-family: var(--font-sans, Geist, sans-serif); font-size: 0.8125rem; color: var(--color-ink, #14181a); } .ds-toast-undo { background: none; border: none; font: inherit; color: var(--color-accent, #005f66); cursor: pointer; } .ds-toast-undo:hover { text-decoration: underline; } .ds-toast-undo:focus-visible { outline: 2px solid var(--color-accent, #005f66); outline-offset: 2px; }"
+    },
+    {
+      "name": "Place Row",
+      "kind": "card",
+      "refersTo": "place-row",
+      "description": "Places index row: no tile, serif title, muted area and tags; selected takes surface, semibold, teal chevron.",
+      "html": "<ul class=\"ds-prows\"><li><button class=\"ds-prow ds-prow--on\" aria-current=\"true\"><span class=\"ds-prow-body\"><span class=\"ds-prow-title\">Blue Bottle Coffee Kiyosumi-Shirakawa</span><span class=\"ds-prow-meta\">Koto City · coffee</span></span><span class=\"ds-prow-dist\">1.2 km</span><span class=\"ds-prow-chev\" aria-hidden=\"true\">›</span></button></li><li><button class=\"ds-prow\"><span class=\"ds-prow-body\"><span class=\"ds-prow-title\">Fuglen Tomigaya</span><span class=\"ds-prow-meta\">coffee</span></span><span class=\"ds-prow-dist\">3 km</span><span class=\"ds-prow-chev\" aria-hidden=\"true\">›</span></button></li></ul>",
+      "css": ".ds-prows { list-style: none; margin: 0; padding: 0; width: 22rem; border-block: 1px solid var(--color-border, #d3dad9); } .ds-prows li + li { border-top: 1px solid var(--color-border, #d3dad9); } .ds-prow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; background: none; border: none; text-align: left; cursor: pointer; transition: background-color 150ms; } .ds-prow:hover, .ds-prow--on { background: var(--color-surface, #e7ebeb); } .ds-prow:focus-visible { outline: 2px solid var(--color-accent, #005f66); outline-offset: 2px; } .ds-prow-body { flex: 1; min-width: 0; } .ds-prow-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-serif, 'Source Serif 4', Georgia, serif); font-size: 1rem; line-height: 1.75; color: var(--color-ink, #14181a); } .ds-prow--on .ds-prow-title { font-weight: 600; } .ds-prow-meta, .ds-prow-dist { font-family: var(--font-sans, 'IBM Plex Sans', ui-sans-serif, sans-serif); font-size: 0.8125rem; color: var(--color-muted, #5a6462); } .ds-prow-meta { display: block; } .ds-prow-dist { font-variant-numeric: tabular-nums; } .ds-prow-chev { font-size: 1rem; color: transparent; } .ds-prow--on .ds-prow-chev { color: var(--color-accent, #005f66); }"
+    },
+    {
+      "name": "Place Card",
+      "kind": "custom",
+      "refersTo": "place-card",
+      "description": "The one floating element on the map: name, address, Open in Maps, Collections, Edit, Delete.",
+      "html": "<div class=\"ds-pcard\"><p class=\"ds-pcard-title\">Blue Bottle Coffee Kiyosumi-Shirakawa</p><p class=\"ds-pcard-addr\">1-4-8 Hirano, Koto City, Tokyo</p><div class=\"ds-pcard-acts\"><a class=\"ds-pcard-open\" href=\"#\">Open in Maps<span aria-hidden=\"true\">&nbsp;↗</span></a><button class=\"ds-pcard-q\" aria-expanded=\"false\">Collections (2)</button><button class=\"ds-pcard-q\">Edit</button><button class=\"ds-pcard-q ds-pcard-q--danger\">Delete</button></div></div>",
+      "css": ".ds-pcard { max-width: 22rem; padding: 12px 14px; background: var(--color-bg, #f5f7f7); color: var(--color-ink, #14181a); border: 1px solid var(--color-border, #d3dad9); border-radius: 4px; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); font-family: var(--font-sans, 'IBM Plex Sans', ui-sans-serif, sans-serif); } .ds-pcard-title { margin: 0; font-family: var(--font-serif, 'Source Serif 4', Georgia, serif); font-size: 1rem; font-weight: 600; line-height: 1.375; } .ds-pcard-addr { margin: 2px 0 0; font-size: 0.8125rem; color: var(--color-muted, #5a6462); } .ds-pcard-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; } .ds-pcard-open { margin-right: 4px; font-size: 0.8125rem; font-weight: 500; color: var(--color-accent, #005f66); text-decoration: underline; text-underline-offset: 2px; border-radius: 4px; } .ds-pcard-q { background: none; border: none; padding: 4px 8px; border-radius: 4px; font: inherit; font-size: 0.8125rem; font-weight: 500; color: var(--color-muted, #5a6462); cursor: pointer; } .ds-pcard-q:hover { color: var(--color-ink, #14181a); } .ds-pcard-q--danger:hover { color: var(--color-danger, #b02a37); } .ds-pcard-open:focus-visible, .ds-pcard-q:focus-visible { outline: 2px solid var(--color-accent, #005f66); outline-offset: 2px; }"
+    },
+    {
+      "name": "Map Controls",
+      "kind": "nav",
+      "refersTo": "map-control",
+      "description": "Field-edged stack at the map's top right: zoom in, zoom out, Near me (teal while on). Drawn SVG icons.",
+      "html": "<div class=\"ds-mapctl\"><button aria-label=\"Zoom in\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M12 6v12M6 12h12\"/></svg></button><button aria-label=\"Zoom out\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M6 12h12\"/></svg></button><button aria-label=\"Show places near me\" aria-pressed=\"true\" class=\"ds-mapctl-on\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M12 3v3M12 18v3M3 12h3M18 12h3M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z\"/></svg></button></div>",
+      "css": ".ds-mapctl { display: inline-flex; flex-direction: column; overflow: hidden; background: var(--color-bg, #f5f7f7); border: 1px solid var(--color-field, #778482); border-radius: 4px; } .ds-mapctl button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; background: none; border: none; color: var(--color-ink, #14181a); cursor: pointer; } .ds-mapctl button + button { border-top: 1px solid var(--color-border, #d3dad9); } .ds-mapctl button:hover { background: var(--color-surface, #e7ebeb); } .ds-mapctl button:focus-visible { outline: 2px solid var(--color-accent, #005f66); outline-offset: -2px; } .ds-mapctl .ds-mapctl-on { color: var(--color-accent, #005f66); }"
     }
   ],
   "narrative": {
@@ -131,16 +511,50 @@
       "Cool neutrals plus a single teal accent; one semantic hue (danger) beyond it.",
       "Serif for content, sans for chrome, mono for commands.",
       "Flat and tonal; the only shadow belongs to the floating toast.",
-      "Selection and state are never carried by color alone."
+      "Selection and state are never carried by color alone.",
+      "Places open onto a map drawn in the same tokens, beside a hairline index that is its full equivalent."
     ],
     "rules": [
-      { "name": "The One Enamel Rule", "body": "Teal is the only hue that means \"active\" or \"go\". Anything selected, primary, focused, or linked is teal; nothing decorative is.", "section": "colors" },
-      { "name": "The Cool Neutral Rule", "body": "Neutrals are tinted toward the accent's hue. Warm greys, creams, and beiges do not belong in this drawer.", "section": "colors" },
-      { "name": "The Pinned Console Rule", "body": "The terminal palette never follows the theme toggle. A command card is dark on a light page and dark on a dark page.", "section": "colors" },
-      { "name": "The Fixed Scale Rule", "body": "The app's scale is five fixed rem steps at about 1.2 (label 0.8125, body 0.9375, title 1.125, headline 1.5, display 1.875). No clamp() inside the product; the landing hero is the one fluid exception.", "section": "typography" },
-      { "name": "The Thai Leading Rule", "body": "Anything that can hold Thai, titles above all, gets 1.75 line-height so stacked tone marks never clip.", "section": "typography" },
-      { "name": "The Sentence Case Rule", "body": "Section labels and rail headings are sentence case, muted, and untracked.", "section": "typography" },
-      { "name": "The Tonal Depth Rule", "body": "A container is distinguished by a surface step or a hairline. If something needs a shadow, it should be floating over content; otherwise it does not get one.", "section": "elevation" }
+      {
+        "name": "The One Enamel Rule",
+        "body": "Teal is the only hue that means \"active\" or \"go\". Anything selected, primary, focused, or linked is teal; nothing decorative is.",
+        "section": "colors"
+      },
+      {
+        "name": "The Cool Neutral Rule",
+        "body": "Neutrals are tinted toward the accent's hue. Warm greys, creams, and beiges do not belong in this drawer.",
+        "section": "colors"
+      },
+      {
+        "name": "The Pinned Console Rule",
+        "body": "The terminal palette never follows the theme toggle. A command card is dark on a light page and dark on a dark page.",
+        "section": "colors"
+      },
+      {
+        "name": "The Drawn Map Rule",
+        "body": "The basemap is drawn in the theme tokens and follows the theme toggle, unlike the console. Every map color is a token role, never a vendor style, and teal on the map means selected and nothing else.",
+        "section": "colors"
+      },
+      {
+        "name": "The Fixed Scale Rule",
+        "body": "The app's scale is five fixed rem steps (label 0.8125, body 0.875, title 1, headline 1.5, display 1.875). Dense by choice: the small steps stay readable because weight and tone carry the hierarchy (500 for anything you press or that names a field, 400 for what you type and read), not size. No clamp() inside the product; the landing hero is the one fluid exception.",
+        "section": "typography"
+      },
+      {
+        "name": "The Thai Leading Rule",
+        "body": "Text that holds Thai gets 1.75 line-height so stacked tone marks never clip; `lang=\"th\"` on the element applies it. List-row titles take 1.75 whatever their language, so mixed Thai and Latin rows keep one rhythm. The detail pane's title and descriptions use Latin leading (1.25, 1.625) unless they hold Thai.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "Section labels and rail headings are sentence case, muted, and untracked.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tonal Depth Rule",
+        "body": "A container is distinguished by a surface step or a hairline. If something needs a shadow, it should be floating over content; otherwise it does not get one.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do build every new surface from the app's own idioms: hairline-divided rows, the 112 by 64 tile, serif titles, muted label metadata.",
@@ -148,7 +562,9 @@
       "Do set commands in the pinned console palette, in Geist Mono, with a teal prompt.",
       "Do keep app type on the five fixed rem steps and give Thai-capable text 1.75 leading.",
       "Do keep the teal as the only active color; danger is the only other hue.",
-      "Do respect reduced motion: transitions collapse to near zero, and the landing's auto-typed demo query appears at once."
+      "Do respect reduced motion: transitions collapse to near zero, and the landing's auto-typed demo query appears at once.",
+      "Do draw any map in the live theme tokens: land on surface, ink pins with a paper stroke, teal only for the selected pin, you as a hollow ink ring.",
+      "Do keep the map's chrome in the app's idioms: a field-edged control stack with drawn SVG icons, muted label-size scale and attribution, and the toast float only for what floats over the map."
     ],
     "donts": [
       "Don't use warm neutrals; the drawer is cool.",
@@ -156,7 +572,9 @@
       "Don't lift containers with shadows; reserve the shadow for content that floats.",
       "Don't introduce tracked uppercase eyebrows over sections; rail and section labels are sentence case and muted.",
       "Don't add a second accent hue or a decorative use of teal.",
-      "Don't give the landing its own visual world; it runs the app's."
+      "Don't give the landing its own visual world; it runs the app's.",
+      "Don't give place rows a tile; a place has nothing to show in one that its name doesn't already say.",
+      "Don't ship a vendor basemap style, a building layer, or the map library's default chrome."
     ]
   }
 }

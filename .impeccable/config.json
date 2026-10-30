@@ -11,6 +11,48 @@
         ],
         "createdAt": "2026-10-25T07:37:00.960Z",
         "reason": "Assessment B + audit verified: <img src={item.image}> is dynamic, rendered only when item.image && !broken, onError falls back to the monogram tile"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "plex sans\",sans-serif",
+        "createdAt": "2026-10-27T15:51:32.110Z",
+        "reason": "agent: misparsed quoted stack of IBM Plex Sans, a DESIGN.md face, in decision sketches"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "serif 4\",serif",
+        "createdAt": "2026-10-27T15:51:32.127Z",
+        "reason": "agent: misparsed quoted stack of Source Serif 4, a DESIGN.md face, in decision sketches"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "mono\",monospace",
+        "createdAt": "2026-10-27T15:53:29.359Z",
+        "reason": "agent: misparsed quoted stack of Geist Mono, the DESIGN.md command face, in decision sketches"
+      },
+      {
+        "rule": "overused-font",
+        "value": "geist mono",
+        "createdAt": "2026-10-27T15:54:40.054Z",
+        "reason": "agent: Geist Mono is the DESIGN.md command face; brief-pinned"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/catalog-first.html"
+        ],
+        "createdAt": "2026-10-27T15:54:40.072Z",
+        "reason": "agent: throwaway decision sketch; kbd/segment padding mirrors the shipped app components"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/gazetteer.html"
+        ],
+        "createdAt": "2026-10-27T15:54:40.088Z",
+        "reason": "agent: throwaway decision sketch; kbd/ref-chip padding mirrors the shipped app components"
       }
     ]
   }

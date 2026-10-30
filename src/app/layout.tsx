@@ -2,8 +2,9 @@ import "~/styles/globals.css";
 
 import { type Metadata } from "next";
 import {
-  Geist,
   Geist_Mono,
+  IBM_Plex_Sans,
+  IBM_Plex_Sans_Thai,
   Noto_Serif_Thai,
   Source_Serif_4,
 } from "next/font/google";
@@ -32,7 +33,10 @@ export const metadata: Metadata = {
   },
 };
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
+const plexSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  variable: "--font-ibm-plex-sans",
+});
 // Mono and Thai are below the fold or content-dependent, so they load when a
 // glyph first needs them (unicode-range) rather than competing with the faces
 // every page paints first.
@@ -51,6 +55,14 @@ const notoSerifThai = Noto_Serif_Thai({
   variable: "--font-noto-serif-thai",
   preload: false,
 });
+// Plex Sans's own Thai, behind it as Noto Serif Thai sits behind the serif.
+// Static face: 500 is the rail headings, 600 the section headings and toast actions.
+const plexSansThai = IBM_Plex_Sans_Thai({
+  subsets: ["thai"],
+  weight: ["400", "500", "600"],
+  variable: "--font-ibm-plex-sans-thai",
+  preload: false,
+});
 
 export default function RootLayout({
   children,
@@ -59,12 +71,12 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geist.variable} ${geistMono.variable} ${sourceSerif.variable} ${notoSerifThai.variable}`}
+      className={`${plexSans.variable} ${geistMono.variable} ${sourceSerif.variable} ${notoSerifThai.variable} ${plexSansThai.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: noFlash }} />
       </head>
-      <body className="bg-bg text-ink font-sans">{children}</body>
+      <body className="bg-bg text-ink font-sans antialiased">{children}</body>
     </html>
   );
 }

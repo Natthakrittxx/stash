@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Gazetteer</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Geist+Mono&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1440px;height:900px;overflow:hidden;background:#f5f7f7;color:#14181a;font:400 14px/1.5 'IBM Plex Sans',sans-serif;padding:40px}
+header{display:flex;align-items:center;justify-content:space-between;height:36px}
+.brand{display:flex;align-items:center;gap:10px;font:400 30px/1 'Source Serif 4',serif}
+.mark{width:26px;height:26px;border:2px solid #14181a;border-radius:4px;border-top-width:7px}
+.hr{display:flex;gap:20px;color:#5a6462;font-size:13px;font-weight:500}
+.wrap{display:flex;gap:40px;margin-top:32px}
+.rail{width:208px;flex:none}
+.rail h2{font-size:13px;font-weight:600;color:#5a6462;margin-bottom:6px;display:flex;justify-content:space-between}
+.rail h2 span{font-weight:500;color:#005f66}
+.grp{margin-bottom:28px}
+.f{display:flex;justify-content:space-between;padding:4px 10px;border-radius:4px;font-size:13px;font-weight:500;color:#5a6462}
+.f b{font-weight:500;width:16px;display:inline-block}
+.f i{font-style:normal;font-variant-numeric:tabular-nums}
+.f.on{background:#005f66;color:#f5f7f7}
+.main{flex:1;min-width:0}
+.top{display:flex;justify-content:space-between;align-items:start}
+.ttl{font:400 30px/1 'Source Serif 4',serif}
+.meta{font-size:13px;color:#5a6462}
+.top .meta{margin-top:8px}
+.search{width:300px;border:1px solid #778482;border-radius:4px;padding:8px 12px;color:#5a6462;display:flex;justify-content:space-between}
+kbd{border:1px solid #d3dad9;border-radius:4px;padding:0 6px;font:400 13px 'IBM Plex Sans';color:#5a6462}
+.sheet{margin-top:20px;display:grid;grid-template-columns:20px 1fr;grid-template-rows:20px auto;border:1px solid #d3dad9;border-radius:4px;overflow:hidden}
+.cols{grid-column:2;display:grid;grid-template-columns:repeat(6,1fr);font:400 12px/20px 'Geist Mono',monospace;color:#5a6462;text-align:center;border-bottom:1px solid #d3dad9}
+.rows{display:grid;grid-template-rows:repeat(4,1fr);font:400 12px 'Geist Mono',monospace;color:#5a6462;place-items:center;border-right:1px solid #d3dad9}
+.sheet svg{display:block;width:100%;height:331px}
+.idx{display:grid;grid-template-columns:1fr 1fr;gap:0 40px;margin-top:20px}
+.g h2{display:flex;gap:10px;align-items:baseline;font-size:13px;font-weight:600;padding:8px 0 4px;border-bottom:1px solid #d3dad9}
+.g h2 code{font:500 13px 'Geist Mono',monospace;color:#14181a}
+.g h2 span{font-weight:400;color:#5a6462}
+.r{display:flex;gap:12px;align-items:center;padding:3px 8px;border-radius:4px;font:400 15px/1.75 'Source Serif 4',serif}
+.r code{font:400 12px 'Geist Mono',monospace;color:#5a6462;width:18px;text-align:right}
+.r.sel{background:#e7ebeb;font-weight:600}.r.sel code{color:#005f66}
+.r .chev{margin-left:auto;color:#005f66}
+.pane{width:384px;flex:none;display:flex;flex-direction:column;gap:14px}
+.tile{width:384px;height:202px;border:1px solid #d3dad9;border-radius:4px;display:block}
+.pt{font:400 30px/1.25 'Source Serif 4',serif}
+.ref code{font:500 13px 'Geist Mono',monospace;color:#14181a;border:1px solid #d3dad9;border-radius:4px;padding:1px 6px;margin-right:8px}
+.acts{display:flex;gap:8px;align-items:center}
+.btn{background:#005f66;color:#f5f7f7;border-radius:4px;padding:8px 16px;font-weight:500}
+.q{color:#5a6462;font-size:13px;font-weight:500;padding:4px 8px}
+.near{border-top:1px solid #d3dad9;padding-top:12px}
+.near h2{font-size:13px;font-weight:600;color:#5a6462;margin-bottom:4px}
+.near p{display:flex;justify-content:space-between;font:400 15px/1.75 'Source Serif 4',serif}
+.near p span{font:400 13px 'IBM Plex Sans';color:#5a6462}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="base" viewBox="0 0 1000 700">
+<rect width="1000" height="700" fill="#e7ebeb"/>
+<path d="M520 700C560 640 640 600 760 590C860 582 940 560 1000 540V700Z" fill="#cdd6d5"/>
+<path d="M650 0C670 120 720 220 690 320C665 410 690 500 660 600L620 700" stroke="#cdd6d5" stroke-width="18" fill="none"/>
+<g fill="#dce3e2"><rect x="440" y="290" width="80" height="70" rx="14"/><rect x="255" y="350" width="55" height="70" rx="12"/><rect x="540" y="115" width="55" height="45" rx="10"/></g>
+<g stroke="#f8faf9" fill="none" stroke-linecap="round"><ellipse cx="420" cy="320" rx="215" ry="250" stroke-width="6"/>
+<path d="M0 260L1000 300M80 640L560 330L1000 120M0 470L1000 430" stroke-width="5"/>
+<path d="M480 0V700M300 0L230 700M620 0L560 700M760 0L820 700M0 140L1000 180M0 590L700 550M120 0L60 700M900 0L940 700" stroke-width="3"/></g>
+</symbol>
+<g id="np" font-family="IBM Plex Sans,sans-serif" font-size="17" font-weight="500" text-anchor="middle"></g>
+</defs></svg>
+
+<header><div class="brand"><div class="mark"></div>Stash</div><div class="hr"><span>Sign out</span><span>GitHub</span><span>◐</span></div></header>
+<div class="wrap">
+<aside class="rail">
+ <div class="grp"><h2>Kind</h2>
+  <div class="f"><span><b></b>All</span><i>96</i></div><div class="f"><span><b></b>Tools</span><i>41</i></div><div class="f"><span><b></b>Formulae</span><i>18</i></div><div class="f on"><span><b>✓</b>Places</span><i>37</i></div></div>
+ <div class="grp"><h2>Collections <span>+ New</span></h2>
+  <div class="f on"><span><b>✓</b>Tokyo, March</span><i>12</i></div><div class="f"><span><b></b>Bangkok coffee</span><i>8</i></div><div class="f"><span><b></b>Chiang Mai, Dec</span><i>5</i></div></div>
+ <div class="grp"><h2>Tags</h2>
+  <div class="f"><span><b></b>coffee</span><i>9</i></div><div class="f"><span><b></b>museum</span><i>6</i></div><div class="f"><span><b></b>design</span><i>4</i></div></div>
+</aside>
+<main class="main">
+ <div class="top"><div><h1 class="ttl">Tokyo, March</h1><p class="meta">12 places in 7 squares · Paste a maps link to add</p></div><div class="search"><span>Search this collection…</span><kbd>/</kbd></div></div>
+ <div class="sheet">
+  <div class="cols"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span></div>
+  <div class="rows"><span>1</span><span>2</span><span>3</span><span>4</span></div>
+  <svg viewBox="0 60 1000 495" preserveAspectRatio="xMidYMid slice"><use href="#base" width="1000" height="700"/>
+   <g stroke="#14181a" stroke-opacity=".14" stroke-width="1.5"><path d="M166.7 60V555M333.3 60V555M500 60V555M666.7 60V555M833.3 60V555M0 183.75H1000M0 307.5H1000M0 431.25H1000"/></g>
+   <g font-family="IBM Plex Sans,sans-serif" font-size="17" font-weight="500" text-anchor="middle">
+    <g fill="#14181a" stroke="#f5f7f7" stroke-width="3"><circle cx="520" cy="95" r="15"/><circle cx="600" cy="165" r="15"/><circle cx="230" cy="250" r="15"/><circle cx="350" cy="430" r="15"/><circle cx="545" cy="400" r="15"/><circle cx="590" cy="425" r="15"/><circle cx="765" cy="392" r="15"/><circle cx="805" cy="415" r="15"/><circle cx="260" cy="500" r="15"/><circle cx="225" cy="535" r="15"/><circle cx="790" cy="540" r="15"/></g>
+    <circle cx="740" cy="370" r="25" fill="none" stroke="#005f66" stroke-width="2.5"/><circle cx="740" cy="370" r="15" fill="#005f66" stroke="#f5f7f7" stroke-width="3"/>
+    <g fill="#f5f7f7"><text x="520" y="101">1</text><text x="600" y="171">2</text><text x="230" y="256">3</text><text x="350" y="436">4</text><text x="545" y="406">5</text><text x="590" y="431">6</text><text x="740" y="376">7</text><text x="765" y="398">8</text><text x="805" y="421">9</text><text x="260" y="506">10</text><text x="225" y="541">11</text><text x="790" y="546">12</text></g>
+   </g></svg>
+ </div>
+ <div class="idx">
+  <div>
+   <div class="g"><h2><code>D1</code><span>Taito City</span></h2><p class="r"><code>1</code>Yanaka Ginza</p><p class="r"><code>2</code>Kappabashi Dougu Street</p></div>
+   <div class="g"><h2><code>B2</code><span>Shinjuku City</span></h2><p class="r"><code>3</code>Ramen Nagi, Golden Gai</p></div>
+   <div class="g"><h2><code>C3</code><span>Minato City</span></h2><p class="r"><code>4</code>Nezu Museum</p></div>
+   <div class="g"><h2><code>D3</code><span>Chuo City</span></h2><p class="r"><code>5</code>Ginza Itoya</p><p class="r"><code>6</code>Tsukiji Outer Market</p></div>
+  </div>
+  <div>
+   <div class="g"><h2><code>E3</code><span>Koto City</span></h2><p class="r sel"><code>7</code>Blue Bottle Coffee Kiyosumi<span class="chev">›</span></p><p class="r"><code>8</code>Fukagawa Edo Museum</p><p class="r"><code>9</code>Museum of Contemporary Art Tokyo</p></div>
+   <div class="g"><h2><code>B4</code><span>Shibuya, Meguro</span></h2><p class="r"><code>10</code>Tsutaya Books Daikanyama</p><p class="r"><code>11</code>Onibus Coffee Nakameguro</p></div>
+   <div class="g"><h2><code>E4</code><span>Koto City</span></h2><p class="r"><code>12</code>teamLab Planets</p></div>
+  </div>
+ </div>
+</main>
+<aside class="pane">
+ <svg class="tile" viewBox="640 318 200 105"><use href="#base" width="1000" height="700"/><circle cx="740" cy="370" r="9" fill="#005f66" stroke="#f5f7f7" stroke-width="2.5"/><circle cx="765" cy="392" r="5" fill="#14181a" stroke="#f5f7f7" stroke-width="2"/><circle cx="805" cy="415" r="5" fill="#14181a" stroke="#f5f7f7" stroke-width="2"/></svg>
+ <p class="pt">Blue Bottle Coffee Kiyosumi-Shirakawa</p>
+ <p class="meta ref"><code>E3 · 7</code>1-4-8 Hirano, Koto City, Tokyo</p>
+ <div class="acts"><span class="btn">Open in Google Maps ↗</span><span class="q">Edit</span><span class="q">Delete</span></div>
+ <div class="near"><h2>Same square</h2><p>Fukagawa Edo Museum<span>350 m</span></p><p>Museum of Contemporary Art Tokyo<span>800 m</span></p></div>
+</aside>
+</div>
+</body></html>

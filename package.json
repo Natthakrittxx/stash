@@ -23,6 +23,7 @@
     "@t3-oss/env-nextjs": "^0.12.0",
     "better-auth": "^1.3",
     "drizzle-orm": "^0.41.0",
+    "maplibre-gl": "6.14.0",
     "next": "^15.2.3",
     "postgres": "^3.4.4",
     "react": "^19.0.0",
