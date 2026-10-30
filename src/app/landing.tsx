@@ -7,6 +7,7 @@ import { CopyButton } from "./copy-button";
 import { GitHubMark, REPO_URL } from "./github-mark";
 import { StashMark } from "./stash-mark";
 import { ThemeToggle } from "./theme-toggle";
+import { fieldFocus } from "./stash/ui";
 
 // A sample stash for the demo. Synthetic, and labeled as such on the page.
 // Same two kinds as the real thing: a tool is a link, a formula is a command.
@@ -169,7 +170,7 @@ function Demo() {
           aria-describedby="demo-status"
           autoComplete="off"
           spellCheck={false}
-          className={`border-field bg-bg text-title text-ink placeholder:text-muted w-full rounded border py-2.5 pr-10 pl-3 ${focusRing}`}
+          className={`border-field bg-bg text-title text-ink placeholder:text-muted w-full rounded border py-2.5 pr-10 pl-3 ${fieldFocus}`}
         />
         {!query && (
           <kbd

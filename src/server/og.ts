@@ -57,6 +57,12 @@ export function metaDescription(html: string): string | null {
   return text ? text.slice(0, 280) : null;
 }
 
+// A Google Maps place page titles itself "Name · Address"; place.ts splits it.
+export function metaTitle(html: string): string | null {
+  const raw = firstMeta(html, ["og:title", "twitter:title"]);
+  return raw ? decodeEntities(raw).replace(/\s+/g, " ").trim() || null : null;
+}
+
 export type Preview = { image: string | null; description: string | null };
 
 export async function fetchPreview(url: string): Promise<Preview> {

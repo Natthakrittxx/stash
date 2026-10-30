@@ -7,6 +7,7 @@ import { authClient } from "~/server/better-auth/client";
 
 import { StashMark } from "./stash-mark";
 import { ThemeToggle } from "./theme-toggle";
+import { fieldFocus } from "./stash/ui";
 
 // A name is required at signup; derive it from the email so the form stays to
 // two fields. Editable later if display names ever matter.
@@ -140,7 +141,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
             autoComplete="email"
             aria-invalid={error?.field === "email" || undefined}
             aria-describedby={error ? "auth-error" : undefined}
-            className="border-field bg-bg text-body text-ink focus-visible:border-accent focus-visible:outline-accent rounded border px-3 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className={`border-field bg-bg text-body text-ink rounded border px-3 py-2 transition-colors duration-150 ${fieldFocus}`}
           />
         </label>
         <label className="text-label text-muted flex flex-col gap-1">
@@ -157,7 +158,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
                 .filter(Boolean)
                 .join(" ") || undefined
             }
-            className="border-field bg-bg text-body text-ink focus-visible:border-accent focus-visible:outline-accent rounded border px-3 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className={`border-field bg-bg text-body text-ink rounded border px-3 py-2 transition-colors duration-150 ${fieldFocus}`}
           />
           {/* The rule up front, not as a browser bubble after the first try. */}
           {isSignup && <span id="password-hint">At least 8 characters.</span>}

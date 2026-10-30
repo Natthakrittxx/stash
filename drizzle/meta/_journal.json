@@ -22,6 +22,13 @@
       "when": 1783704955902,
       "tag": "0002_wakeful_shadowcat",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793117270645,
+      "tag": "0003_eminent_sway",
+      "breakpoints": true
     }
   ]
 }

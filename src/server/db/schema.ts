@@ -2,14 +2,16 @@ import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  doublePrecision,
   index,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
 
-export type ItemKind = "tool" | "formula";
+export type ItemKind = "tool" | "formula" | "place";
 
 export const items = pgTable(
   "items",
@@ -26,6 +28,12 @@ export const items = pgTable(
     // formula, or a tool whose page has no share image. No CHECK: an absent
     // preview is always valid, so a stale/missing value can never 500.
     image: text("image"),
+    // A place keeps its maps link in `url` (Open in Maps hands off to the
+    // phone's maps app) and its pin here. No pin means the link carried no
+    // coordinates: the place still saves and lists as "Not on the map".
+    lat: doublePrecision("lat"),
+    lng: doublePrecision("lng"),
+    address: text("address"),
     description: text("description").notNull().default(""),
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -45,9 +53,51 @@ export const items = pgTable(
     check(
       "items_kind_shape",
       sql`(${t.kind} = 'tool' AND ${t.url} IS NOT NULL AND ${t.cmd} IS NULL)
-       OR (${t.kind} = 'formula' AND ${t.cmd} IS NOT NULL AND ${t.url} IS NULL)`,
+       OR (${t.kind} = 'formula' AND ${t.cmd} IS NOT NULL AND ${t.url} IS NULL)
+       OR (${t.kind} = 'place' AND ${t.url} IS NOT NULL AND ${t.cmd} IS NULL)`,
+    ),
+    // Half a coordinate is no pin at all, and only a place has one.
+    check(
+      "items_place_pin",
+      sql`(${t.lat} IS NULL AND ${t.lng} IS NULL)
+       OR (${t.kind} = 'place' AND ${t.lat} IS NOT NULL AND ${t.lng} IS NOT NULL)`,
     ),
   ],
+);
+
+// A named group of items of any kind: tools, formulae and places alike.
+export const collections = pgTable(
+  "collections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("collections_user_id_idx").on(t.userId)],
+);
+
+// Many-to-many: one café can sit in "Tokyo, March" and "Coffee worth the trip".
+// Nothing here stops a row joining one user's collection to another user's
+// item, so the actions check that both sides belong to the caller.
+export const collectionItems = pgTable(
+  "collection_items",
+  {
+    collectionId: uuid("collection_id")
+      .notNull()
+      .references(() => collections.id, { onDelete: "cascade" }),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.collectionId, t.itemId] })],
 );
 
 export const user = pgTable("user", {
@@ -114,10 +164,25 @@ export const userRelations = relations(user, ({ many }) => ({
   account: many(account),
   session: many(session),
   items: many(items),
+  collections: many(collections),
 }));
 
-export const itemRelations = relations(items, ({ one }) => ({
+export const itemRelations = relations(items, ({ one, many }) => ({
   user: one(user, { fields: [items.userId], references: [user.id] }),
+  collections: many(collectionItems),
+}));
+
+export const collectionRelations = relations(collections, ({ one, many }) => ({
+  user: one(user, { fields: [collections.userId], references: [user.id] }),
+  items: many(collectionItems),
+}));
+
+export const collectionItemRelations = relations(collectionItems, ({ one }) => ({
+  collection: one(collections, {
+    fields: [collectionItems.collectionId],
+    references: [collections.id],
+  }),
+  item: one(items, { fields: [collectionItems.itemId], references: [items.id] }),
 }));
 
 export const accountRelations = relations(account, ({ one }) => ({

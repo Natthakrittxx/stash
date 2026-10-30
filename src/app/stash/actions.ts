@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
@@ -8,8 +8,9 @@ import { z } from "zod";
 import { text, titleOr } from "~/form";
 import { getSession } from "~/server/better-auth/server";
 import { db } from "~/server/db";
-import { items } from "~/server/db/schema";
+import { collectionItems, collections, items } from "~/server/db/schema";
 import { fetchPreview } from "~/server/og";
+import { resolvePlace } from "~/server/place";
 import { normalizeUrl } from "~/server/url";
 
 const ITEMS_PER_HOUR = 60;
@@ -59,7 +60,22 @@ const itemSchema = z.discriminatedUnion("kind", [
     cmd: z.string().trim().min(1, "A command is required.").max(8000),
     ...shared,
   }),
+  z.object({ kind: z.literal("place"), url: urlField, ...shared }),
 ]);
+
+const pinSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+});
+
+// An undo re-creates a place with the pin it had, which may have been set by
+// hand; a fresh save sends none and the link decides.
+function pinFrom(formData: FormData) {
+  const [lat, lng] = ["lat", "lng"].map((k) => text(formData, k));
+  if (!lat || !lng) return null;
+  const pin = pinSchema.safeParse({ lat: Number(lat), lng: Number(lng) });
+  return pin.success ? pin.data : null;
+}
 
 // `field` names the input a validation error belongs to, so the form can mark it
 // invalid; `id` is the saved row, so the list can select what was just added.
@@ -82,29 +98,40 @@ function parse(formData: FormData) {
     tags: text(formData, "tags"),
     // Read only the field this kind owns. A stale value left in the other input
     // can then never reach the CHECK constraint and surface as a 500.
-    ...(kind === "tool"
-      ? { url: text(formData, "url") }
-      : { cmd: text(formData, "cmd") }),
+    ...(kind === "formula"
+      ? { cmd: text(formData, "cmd") }
+      : { url: text(formData, "url") }),
   });
 }
 
 function toRow(data: z.infer<typeof itemSchema>) {
+  const url = data.kind === "formula" ? null : data.url;
   return {
     kind: data.kind,
-    title: titleOr(
-      data.title,
-      data.kind === "tool" ? data.url : null,
-      data.kind === "formula" ? data.cmd : null,
-    ),
+    title: titleOr(data.title, url, data.kind === "formula" ? data.cmd : null),
     description: data.description,
     tags: data.tags,
-    url: data.kind === "tool" ? data.url : null,
+    url,
     cmd: data.kind === "formula" ? data.cmd : null,
   };
 }
 
+// A place's pin, address and image come from its link; its title too when left
+// blank, since the link's host ("maps.app.goo.gl") names nothing.
+async function placeRow(data: z.infer<typeof itemSchema>, url: string) {
+  const place = await resolvePlace(url);
+  return {
+    ...(data.title ? {} : place.name ? { title: place.name } : {}),
+    lat: place.lat,
+    lng: place.lng,
+    address: place.address,
+    image: place.image,
+  };
+}
+
 // Resolve the preview after the response flushes — capture stays instant and the
-// image/description land on the next load of /stash. A formula has no page, and a
+// image/description land on the next load of /stash, which the client forces
+// by refreshing until the image arrives (stash.tsx). A formula has no page, and a
 // failed fetch leaves the row on its monogram, so nothing here can block a save
 // or surface an error.
 function resolvePreview(
@@ -162,10 +189,35 @@ export async function createItem(formData: FormData): Promise<Result> {
   }
 
   const row = toRow(parsed.data);
+  // A place resolves before the insert, not after the response like a tool's
+  // preview: the map needs its pin the moment it lands.
+  const place =
+    row.kind === "place" && row.url
+      ? { ...(await placeRow(parsed.data, row.url)), ...pinFrom(formData) }
+      : {};
   const [inserted] = await db
     .insert(items)
-    .values({ userId, ...row })
+    .values({ userId, ...row, ...place })
     .returning({ id: items.id });
+
+  // Saved with a collection open (or undone out of some): file it there too,
+  // but only into collections that are the caller's.
+  const wanted = formData
+    .getAll("collection")
+    .filter((v): v is string => idSchema.safeParse(v).success);
+  if (inserted && wanted.length > 0) {
+    const owned = await db
+      .select({ id: collections.id })
+      .from(collections)
+      .where(
+        and(eq(collections.userId, userId), inArray(collections.id, wanted)),
+      );
+    if (owned.length > 0)
+      await db
+        .insert(collectionItems)
+        .values(owned.map((c) => ({ collectionId: c.id, itemId: inserted.id })))
+        .onConflictDoNothing();
+  }
 
   revalidatePath("/stash");
   if (inserted) resolvePreview(inserted.id, userId, row);
@@ -185,12 +237,32 @@ export async function updateItem(
   if (!parsed.success) return invalid(parsed.error);
 
   const row = toRow(parsed.data);
+  const owned = and(eq(items.id, target.data), eq(items.userId, userId));
   // Keep a tool's existing preview until the fresh one resolves (no flash on an
   // unrelated edit); clear it when a row becomes a formula, which has no page.
+  // Only a place keeps a pin.
+  let set: Partial<typeof items.$inferInsert> =
+    row.kind === "formula"
+      ? { ...row, image: null, lat: null, lng: null, address: null }
+      : { ...row, lat: null, lng: null, address: null };
+  if (row.kind === "place" && row.url) {
+    const [current] = await db
+      .select({ kind: items.kind, url: items.url, title: items.title })
+      .from(items)
+      .where(owned);
+    if (!current) return { error: "No such item." };
+    // An edit that keeps the link keeps the pin, which may have been set by
+    // hand, and a cleared title falls back to the old one rather than the host;
+    // a new link (or a row becoming a place) re-resolves both.
+    set =
+      current.kind === "place" && current.url === row.url
+        ? { ...row, title: parsed.data.title || current.title }
+        : { ...row, ...(await placeRow(parsed.data, row.url)) };
+  }
   const updated = await db
     .update(items)
-    .set(row.kind === "formula" ? { ...row, image: null } : row)
-    .where(and(eq(items.id, target.data), eq(items.userId, userId)))
+    .set(set)
+    .where(owned)
     .returning({ id: items.id });
 
   // A miss means the id was someone else's or nothing at all. Without this gate
@@ -213,6 +285,113 @@ export async function deleteItem(id: string): Promise<Result> {
   await db
     .delete(items)
     .where(and(eq(items.id, target.data), eq(items.userId, userId)));
+
+  revalidatePath("/stash");
+  return {};
+}
+
+// "Set location": a place whose link carried no pin gets one by a click on the
+// map.
+export async function setPlacePin(
+  id: string,
+  lat: number,
+  lng: number,
+): Promise<Result> {
+  const userId = await requireUserId();
+  const target = idSchema.safeParse(id);
+  const pin = pinSchema.safeParse({ lat, lng });
+  if (!target.success || !pin.success)
+    return { error: "That spot couldn't be saved. Try another." };
+
+  const updated = await db
+    .update(items)
+    .set(pin.data)
+    .where(
+      and(
+        eq(items.id, target.data),
+        eq(items.userId, userId),
+        eq(items.kind, "place"),
+      ),
+    )
+    .returning({ id: items.id });
+  if (updated.length === 0) return { error: "No such place." };
+
+  revalidatePath("/stash");
+  return { id: target.data };
+}
+
+const collectionName = z
+  .string()
+  .trim()
+  .min(1, "Name the collection first.")
+  .max(80, "Keep the name under 80 characters.");
+
+export async function createCollection(name: string): Promise<Result> {
+  const userId = await requireUserId();
+  const parsed = collectionName.safeParse(name);
+  if (!parsed.success) return invalid(parsed.error);
+
+  const [row] = await db
+    .insert(collections)
+    .values({ userId, name: parsed.data })
+    .returning({ id: collections.id });
+
+  revalidatePath("/stash");
+  return { id: row?.id };
+}
+
+// Deletes the collection only; its places stay in the stash.
+export async function deleteCollection(id: string): Promise<Result> {
+  const userId = await requireUserId();
+  const target = idSchema.safeParse(id);
+  if (!target.success) return { error: "No such collection." };
+
+  await db
+    .delete(collections)
+    .where(
+      and(eq(collections.id, target.data), eq(collections.userId, userId)),
+    );
+
+  revalidatePath("/stash");
+  return {};
+}
+
+export async function setMembership(
+  collectionId: string,
+  itemId: string,
+  member: boolean,
+): Promise<Result> {
+  const userId = await requireUserId();
+  if (
+    !idSchema.safeParse(collectionId).success ||
+    !idSchema.safeParse(itemId).success
+  )
+    return { error: "No such collection." };
+
+  // The join table can't check ownership itself: both sides must be the caller's.
+  const [both] = await db
+    .select({ id: collections.id })
+    .from(collections)
+    .innerJoin(items, and(eq(items.id, itemId), eq(items.userId, userId)))
+    .where(
+      and(eq(collections.id, collectionId), eq(collections.userId, userId)),
+    );
+  if (!both) return { error: "No such collection." };
+
+  if (member)
+    await db
+      .insert(collectionItems)
+      .values({ collectionId, itemId })
+      .onConflictDoNothing();
+  else
+    await db
+      .delete(collectionItems)
+      .where(
+        and(
+          eq(collectionItems.collectionId, collectionId),
+          eq(collectionItems.itemId, itemId),
+        ),
+      );
 
   revalidatePath("/stash");
   return {};

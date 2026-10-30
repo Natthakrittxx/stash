@@ -1,9 +1,11 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useOptimistic,
   useRef,
@@ -12,7 +14,17 @@ import {
   useTransition,
 } from "react";
 
-import { text, titleOr } from "~/form";
+import { looksLikeLink, text, titleOr } from "~/form";
+import {
+  areaOf,
+  type Bounds,
+  coordsFromUrl,
+  distance,
+  isMapsLink,
+  nameFromUrl,
+  parseLink,
+  within,
+} from "~/maps";
 import { authClient } from "~/server/better-auth/client";
 import type { items } from "~/server/db/schema";
 
@@ -21,14 +33,52 @@ import { GitHubMark, REPO_URL } from "../github-mark";
 import { StashMark } from "../stash-mark";
 import { ThemeToggle } from "../theme-toggle";
 
-import { createItem, deleteItem, updateItem } from "./actions";
+import {
+  createCollection,
+  createItem,
+  deleteCollection,
+  deleteItem,
+  setMembership,
+  setPlacePin,
+  updateItem,
+} from "./actions";
+import type { Point } from "./map";
+import {
+  CollectionsButton,
+  CollectionsPanel,
+  type Filing,
+  formatDistance,
+  IndexHeading,
+  NewCollection,
+  PlaceCard,
+  PlaceRow,
+  UnpinnedRow,
+} from "./places";
+import { field, fieldFocus, focusRing, langOf, quietButton, touch } from "./ui";
+
+// MapLibre is ~1MB and only the Places view draws a map: load it there.
+const PlaceMap = dynamic(() => import("./map"), {
+  ssr: false,
+  loading: () => <div className="bg-surface h-full w-full" />,
+});
 
 // The columns stash/page.tsx selects: what the list renders, nothing more.
-type Item = Pick<
+export type Item = Pick<
   typeof items.$inferSelect,
-  "id" | "kind" | "title" | "url" | "cmd" | "image" | "description" | "tags"
+  | "id"
+  | "kind"
+  | "title"
+  | "url"
+  | "cmd"
+  | "image"
+  | "description"
+  | "tags"
+  | "lat"
+  | "lng"
+  | "address"
 >;
-type Tab = "all" | "tool" | "formula";
+export type Collection = { id: string; name: string; itemIds: string[] };
+type Tab = "all" | "tool" | "formula" | "place";
 // What a fresh composer opens with, field by field: a remembered draft, a
 // no-match prefill, or the item being edited.
 type Draft = Partial<
@@ -42,6 +92,24 @@ type Patch =
   | { type: "delete"; id: string };
 
 const byTitle = (a: Item, b: Item) => a.title.localeCompare(b.title);
+
+type FolderPatch =
+  | { type: "delete"; id: string }
+  | { type: "member"; collectionId: string; itemId: string; member: boolean };
+
+function reduceFolders(list: Collection[], patch: FolderPatch): Collection[] {
+  if (patch.type === "delete") return list.filter((c) => c.id !== patch.id);
+  return list.map((c) =>
+    c.id !== patch.collectionId
+      ? c
+      : {
+          ...c,
+          itemIds: patch.member
+            ? [...new Set([...c.itemIds, patch.itemId])]
+            : c.itemIds.filter((id) => id !== patch.itemId),
+        },
+  );
+}
 
 function reduce(list: Item[], patch: Patch): Item[] {
   switch (patch.type) {
@@ -65,22 +133,28 @@ function hostOf(url: string): string {
   }
 }
 
-// Thai script. Marking Thai text lang="th" gives a screen reader the right voice
-// and lets the :lang(th) leading rule in globals.css apply.
-const langOf = (s: string) => (/[฀-๿]/.test(s) ? "th" : undefined);
-
 function draftFrom(formData: FormData, id: string): Item {
-  const kind = text(formData, "kind") === "tool" ? "tool" : "formula";
+  const raw = text(formData, "kind");
+  const kind = raw === "tool" || raw === "place" ? raw : "formula";
+  const url = kind === "formula" ? null : text(formData, "url");
+  // A full maps link carries its pin and name, so a new place lands on the map
+  // at once; a short link waits for the server to follow it.
+  const link = kind === "place" && url ? parseLink(url) : null;
+  const pin = link ? coordsFromUrl(link) : null;
   return {
     id,
     kind,
     title: titleOr(
-      text(formData, "title").trim(),
-      kind === "tool" ? text(formData, "url") : null,
+      text(formData, "title").trim() ||
+        ((link ? nameFromUrl(link) : null) ?? ""),
+      url,
       kind === "formula" ? text(formData, "cmd") : null,
     ),
-    url: kind === "tool" ? text(formData, "url") : null,
+    url,
     cmd: kind === "formula" ? text(formData, "cmd") : null,
+    lat: pin?.lat ?? null,
+    lng: pin?.lng ?? null,
+    address: null,
     // The server resolves the real preview and revalidates; until then the row
     // shows its monogram fallback.
     image: null,
@@ -92,8 +166,15 @@ function draftFrom(formData: FormData, id: string): Item {
   };
 }
 
-function formDataOf(item: Item): FormData {
+// An undo re-creates the item as it was: its pin, which may have been set by
+// hand, and the collections it was filed in.
+function formDataOf(item: Item, collectionIds: string[] = []): FormData {
   const fd = new FormData();
+  if (item.lat !== null && item.lng !== null) {
+    fd.set("lat", String(item.lat));
+    fd.set("lng", String(item.lng));
+  }
+  for (const id of collectionIds) fd.append("collection", id);
   fd.set("kind", item.kind);
   fd.set("title", item.title);
   fd.set("description", item.description);
@@ -114,18 +195,11 @@ function draftOf(item: Item): Draft {
   };
 }
 
-const focusRing =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
-// Touch-sized hit area on coarse pointers (WCAG 2.5.5); a mouse keeps the
-// density. Pair with inline-flex/flex + items-center so the label stays centred.
-const touch = "pointer-coarse:min-h-11";
-const fieldLabel = "flex flex-col gap-1 text-label text-ink";
-const field = `w-full rounded border border-field bg-bg px-3 py-2 text-body text-ink placeholder:text-muted aria-[invalid=true]:border-danger ${focusRing}`;
-// Search is the product's core act ("re-finding is the product"), so it reads a
-// step larger than the composer fields — the one input that leads. pr-10 keeps a
-// gutter for the idle `/` hint (and the native search-clear once you type).
-const search = `w-full rounded border border-field bg-bg py-2.5 pr-10 pl-3 text-title text-ink placeholder:text-muted ${focusRing}`;
-const quietButton = `inline-flex items-center rounded px-2 py-1 text-label text-muted ${touch} ${focusRing}`;
+const fieldLabel = "flex flex-col gap-1 text-label font-medium text-ink";
+// Search is the product's core act ("re-finding is the product"). It leads by
+// place and width, not size: body text like every field. pr-10 keeps a gutter
+// for the idle `/` hint (and the native search-clear once you type).
+const search = `w-full rounded border border-field bg-bg py-2.5 pr-10 pl-3 text-body pointer-coarse:text-base text-ink placeholder:text-muted ${fieldFocus}`;
 const toast =
   "border-border bg-surface flex items-center justify-between gap-4 rounded border px-4 py-3 shadow-lg";
 
@@ -133,12 +207,12 @@ const toast =
 // tool/formula toggle): accent fill (`bg-accent text-bg`) plus a reserved ✓ slot
 // so the state never rides on color alone and selection never reflows the pair.
 // The tag chips share the same accent+✓ vocabulary in pill form.
-const segment = `rounded px-2.5 py-1 text-label transition-colors duration-150 ${touch} ${focusRing}`;
+const segment = `rounded px-2.5 py-1 text-label font-medium transition-colors duration-150 ${touch} ${focusRing}`;
 const segmentOff = "text-muted hover:text-ink";
 
 // Sidebar section label. Left padding matches the filter rows' so the heading
 // sits flush with the labels beneath it.
-const railHeading = "px-2 text-label font-medium text-muted";
+const railHeading = "px-2 text-label font-semibold text-muted";
 
 const cookie = (name: string, value: string) =>
   (document.cookie = `${name}=${value};path=/;max-age=31536000;samesite=lax`);
@@ -169,11 +243,13 @@ function useWide(initial: boolean) {
 
 export function Stash({
   items: initial,
+  collections: initialCollections,
   name,
   initialWide,
   initialRailOpen,
 }: {
   items: Item[];
+  collections: Collection[];
   name: string;
   initialWide: boolean;
   initialRailOpen: boolean;
@@ -201,6 +277,31 @@ export function Stash({
   const [undo, setUndo] = useState<Item | null>(null);
   const [saved, setSaved] = useState<{ title: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Places. A collection is where you are inside Places, like a tab.
+  const [folders, patchFolders] = useOptimistic(
+    initialCollections,
+    reduceFolders,
+  );
+  const [collectionId, setCollectionId] = useState<string | null>(null);
+  // The place whose card is open on the map. Separate from the selection, so
+  // Esc can close the card while its pin stays selected.
+  const [cardFor, setCardFor] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // The visitor's own pan or zoom, tagged with the filters it was made under:
+  // a new search, tag or collection refits the map and drops it.
+  const [view, setView] = useState<Bounds | null>(null);
+  const [showAll, setShowAll] = useState(0);
+  const [user, setUser] = useState<Point | null>(null);
+  const [fitTo, setFitTo] = useState<{
+    base: string;
+    key: string;
+    points: Point[];
+  } | null>(null);
+  const [locating, setLocating] = useState(false);
+  // The place waiting for "Set location" to get its pin from a map click.
+  const [dropping, setDropping] = useState<Item | null>(null);
+  const undoCollections = useRef<string[]>([]);
 
   const wide = useWide(initialWide);
 
@@ -272,7 +373,8 @@ export function Stash({
     // fall back to the freshly-remounted trigger (or search, on an empty stash).
     requestAnimationFrame(() => {
       const prev = returnFocus.current;
-      if (prev?.isConnected) prev.focus();
+      // Opened with `a` from nowhere, the "opener" is <body>: use the trigger.
+      if (prev?.isConnected && prev !== document.body) prev.focus();
       else (triggerRef.current ?? searchRef.current)?.focus();
     });
   }
@@ -337,6 +439,8 @@ export function Stash({
 
       if (event.key === "Escape") {
         if (composer) closeComposer();
+        else if (dropping) setDropping(null);
+        else if (cardFor) setCardFor(null);
         else if (query) setQuery("");
         else target?.blur();
         return;
@@ -355,7 +459,7 @@ export function Stash({
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [composer, query]);
+  }, [composer, query, dropping, cardFor]);
 
   const allTags = useMemo(
     () =>
@@ -390,6 +494,7 @@ export function Stash({
         item.description,
         item.cmd ?? "",
         item.url ?? "",
+        item.address ?? "",
         ...item.tags,
       ].some((field) => field.toLowerCase().includes(needle)),
     );
@@ -399,6 +504,7 @@ export function Stash({
     all: searched.length,
     tool: searched.filter((i) => i.kind === "tool").length,
     formula: searched.filter((i) => i.kind === "formula").length,
+    place: searched.filter((i) => i.kind === "place").length,
   };
 
   const tagCounts = useMemo(() => {
@@ -414,14 +520,27 @@ export function Stash({
     (t) => (tagCounts.get(t) ?? 0) > 0 || t === activeTag,
   );
 
-  const activeFilters = (tab === "all" ? 0 : 1) + (activeTag ? 1 : 0);
+  const collection = folders.find((c) => c.id === collectionId) ?? null;
+  const activeFilters =
+    (tab === "all" ? 0 : 1) + (activeTag ? 1 : 0) + (collection ? 1 : 0);
   const hasItems = list.length > 0;
 
   const rail = (
     <FilterRail
       tab={tab}
-      onTab={setTab}
+      onTab={onTab}
       kindCounts={kindCounts}
+      collections={folders.map((c) => ({
+        ...c,
+        count: searched.filter((i) => c.itemIds.includes(i.id)).length,
+      }))}
+      activeCollection={collection?.id ?? null}
+      onCollection={onCollection}
+      onCreateCollection={async (name) => {
+        const id = await onCreateCollection(name);
+        if (id) onCollection(id);
+        return id;
+      }}
       tags={railTags}
       tagCounts={tagCounts}
       tagTotals={tagTotals}
@@ -438,9 +557,10 @@ export function Stash({
       searched.filter(
         (i) =>
           (tab === "all" || i.kind === tab) &&
-          (!activeTag || i.tags.includes(activeTag)),
+          (!activeTag || i.tags.includes(activeTag)) &&
+          (!collection || collection.itemIds.includes(i.id)),
       ),
-    [searched, tab, activeTag],
+    [searched, tab, activeTag, collection],
   );
 
   // Two kinds, two treatments: tools stay master rows that drive the preview
@@ -464,31 +584,244 @@ export function Stash({
     ? (tools.find((i) => i.id === selectedId) ?? tools[0] ?? null)
     : null;
 
+  // Places: pinned ones on the map, the rest listed as "Not on the map". The
+  // index lists the pinned ones inside the visitor's own view, nearest first
+  // once Near me knows where you are.
+  const placesView = tab === "place";
+  const places = useMemo(
+    () => visible.filter((i) => i.kind === "place"),
+    [visible],
+  );
+  const pinned = places.filter(
+    (p): p is Item & { lat: number; lng: number } =>
+      p.lat !== null && p.lng !== null,
+  );
+  const unpinned = places.filter((p) => p.lat === null || p.lng === null);
+  // Is there a map to draw at all: anything in this view before search and
+  // tags narrow it.
+  const mapShown = list.some(
+    (i) =>
+      i.kind === "place" && (!collection || collection.itemIds.includes(i.id)),
+  );
+  const shell = placesView && wide && mapShown;
+  const fitKey = `${q}|${activeTag}|${collectionId}|${showAll}`;
+  const fit = fitTo?.base === fitKey ? fitTo : { key: fitKey, points: pinned };
+  // Any refit (a search, tag, collection, Show all, Near me) drops the
+  // visitor's own view, so the index never narrows to a view the map has left.
+  const [viewFor, setViewFor] = useState(fit.key);
+  if (viewFor !== fit.key) {
+    setViewFor(fit.key);
+    setView(null);
+  }
+  const inView = view ? pinned.filter((p) => within(p, view)) : pinned;
+  const listed = user
+    ? [...inView].sort((a, b) => distance(user, a) - distance(user, b))
+    : inView;
+  const selectedPlace = placesView
+    ? (places.find((p) => p.id === selectedId) ?? null)
+    : null;
+
   // The result line under search: what is showing and why, in words — so a
   // collapsed rail or the closed drawer never hides which filters are on. A
   // polite live region, so a screen reader hears the count settle too.
-  const filtering = q !== "" || activeFilters > 0;
-  const summary = filtering
-    ? [
-        `${visible.length} ${visible.length === 1 ? "match" : "matches"}`,
-        q && `for “${q}”`,
-        tab !== "all" && `in ${tab === "tool" ? "Tools" : "Formulae"}`,
-        activeTag && `tagged ${activeTag}`,
-      ]
-        .filter(Boolean)
-        .join(" ")
-    : `${list.length} ${list.length === 1 ? "thing" : "things"} saved`;
+  const placeWords = [
+    q && `for “${q}”`,
+    collection && `in ${collection.name}`,
+    activeTag && `tagged ${activeTag}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const placeNoun = (n: number) =>
+    q || activeTag
+      ? n === 1
+        ? "match"
+        : "matches"
+      : n === 1
+        ? "place"
+        : "places";
+  const narrowed = inView.length < pinned.length;
+  // Where you are (Places, a collection) isn't a filter to clear; a search, a
+  // kind or a tag is.
+  const filtering = placesView
+    ? q !== "" || !!activeTag
+    : q !== "" || tab !== "all" || !!activeTag;
+  const summary = placesView
+    ? (narrowed
+        ? `In view: ${inView.length} of ${pinned.length} ${placeNoun(pinned.length)} ${placeWords}`
+        : `${places.length} ${placeNoun(places.length)} ${placeWords}`
+      ).trim()
+    : filtering
+      ? [
+          `${visible.length} ${visible.length === 1 ? "match" : "matches"}`,
+          q && `for “${q}”`,
+          tab !== "all" &&
+            `in ${tab === "tool" ? "Tools" : tab === "formula" ? "Formulae" : "Places"}`,
+          activeTag && `tagged ${activeTag}`,
+          collection && `in ${collection.name}`,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : collection
+        ? `${visible.length} ${visible.length === 1 ? "thing" : "things"} in ${collection.name}`
+        : `${list.length} ${list.length === 1 ? "thing" : "things"} saved`;
 
   function clearAll() {
     setQuery("");
     setActiveTag(null);
-    setTab("all");
+    if (!placesView) onTab("all");
+  }
+
+  function onTab(next: Tab) {
+    setTab(next);
+  }
+
+  function onCollection(id: string | null) {
+    setCollectionId(id);
+  }
+
+  function selectPlace(id: string, scroll = false) {
+    setSelectedId(id);
+    setCardFor(id);
+    // A pin clicked on the map brings its row into view.
+    if (scroll)
+      requestAnimationFrame(() =>
+        document
+          .getElementById(`place-${id}`)
+          ?.scrollIntoView({ block: "nearest" }),
+      );
+  }
+
+  // Esc on the card: close it, keep the pin selected, focus its row.
+  function closeCard() {
+    const id = cardFor;
+    setCardFor(null);
+    if (id)
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLElement>(`#place-${id} button`)?.focus(),
+      );
+  }
+
+  // Enter on a row: open its card and put focus on Open in Maps.
+  function enterCard(id: string) {
+    setCardFor(id);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLElement>(".place-popup a")?.focus(),
+      ),
+    );
+  }
+
+  // "Show on map" from the All view: open Places on that place, zoomed in.
+  function openPlace(id: string) {
+    onTab("place");
+    selectPlace(id);
+    window.scrollTo({ top: 0 });
+    // The row clicked in the All view is gone; focus lands on the place's row.
+    requestAnimationFrame(() =>
+      document
+        .querySelector<HTMLElement>(`#place-${id} button`)
+        ?.focus({ preventScroll: true }),
+    );
+    const p = list.find((i) => i.id === id);
+    // On a phone the selection's own ease centres it; a second fit would race it.
+    if (wide && p?.lat != null && p.lng != null)
+      setFitTo({
+        base: fitKey,
+        key: `place:${id}`,
+        points: [{ lat: p.lat, lng: p.lng }],
+      });
+  }
+
+  async function onCreateCollection(name: string) {
+    const result = await createCollection(name);
+    if (result.error) {
+      setError({ message: result.error });
+      return undefined;
+    }
+    return result.id;
+  }
+
+  function onToggleMember(cid: string, itemId: string, member: boolean) {
+    startTransition(async () => {
+      patchFolders({ type: "member", collectionId: cid, itemId, member });
+      const result = await setMembership(cid, itemId, member);
+      if (result.error) setError({ message: result.error });
+    });
+  }
+
+  function onDeleteCollection(c: Collection) {
+    setCollectionId(null);
+    startTransition(async () => {
+      patchFolders({ type: "delete", id: c.id });
+      const result = await deleteCollection(c.id);
+      if (result.error) setError({ message: result.error });
+    });
+  }
+
+  // Near me: sort the index by distance and show you with the places around
+  // you. Pressed again, it forgets where you are.
+  function onLocate() {
+    if (user) {
+      setUser(null);
+      setFitTo(null);
+      return;
+    }
+    if (!("geolocation" in navigator))
+      return setError({ message: "This browser can't share its location." });
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setLocating(false);
+        setUser(here);
+        const around = pinned
+          .filter((p) => distance(here, p) < 25_000)
+          .sort((a, b) => distance(here, a) - distance(here, b))
+          .slice(0, 5);
+        setFitTo({
+          base: fitKey,
+          key: `near:${here.lat},${here.lng}`,
+          points: [here, ...around],
+        });
+      },
+      (err) => {
+        setLocating(false);
+        setError({
+          message:
+            err.code === err.PERMISSION_DENIED
+              ? "Location is off for this site. Allow it in your browser's site settings to sort places by distance."
+              : "Couldn't find where you are. Try again in a moment.",
+        });
+      },
+      { timeout: 10_000, maximumAge: 60_000 },
+    );
+  }
+
+  function onDrop(pin: Point) {
+    const item = dropping;
+    if (!item) return;
+    setDropping(null);
+    selectPlace(item.id, true);
+    startTransition(async () => {
+      patch({ type: "update", item: { ...item, ...pin } });
+      const result = await setPlacePin(item.id, pin.lat, pin.lng);
+      if (result.error) setError({ message: result.error });
+    });
   }
 
   async function onSubmit(formData: FormData) {
     setError(null);
     const target = composer?.editing ?? null;
     const draft = draftFrom(formData, target?.id ?? crypto.randomUUID());
+    // An edit that keeps the link keeps its pin and preview until the server
+    // answers.
+    if (target?.url === draft.url)
+      Object.assign(draft, {
+        lat: target.lat,
+        lng: target.lng,
+        address: target.address,
+        image: target.image,
+      });
     patch({ type: target ? "update" : "add", item: draft });
     const result = target
       ? await updateItem(target.id, formData)
@@ -498,12 +831,42 @@ export function Stash({
 
     // Show where it went: the desktop pane selects it (a tool), and a receipt
     // names it, since the alphabetical list may have filed it off-screen.
-    if (result.id && draft.kind === "tool") setSelectedId(result.id);
+    if (result.id && draft.kind === "place") selectPlace(result.id);
+    else if (result.id && draft.kind === "tool") setSelectedId(result.id);
     setSaved({ title: draft.title });
     closeComposer(true);
+
+    const id = result.id ?? target?.id;
+    if (id && draft.kind === "tool") {
+      refreshes.current = 0;
+      setAwaiting({ id, image: target?.image ?? null });
+    }
   }
 
+  // A tool's preview image is fetched after its save responds (actions.ts), so
+  // it shows a monogram first. Re-fetch the page every 1.5s until a new image
+  // lands; the fetch gives up at 5s, so six tries cover it.
+  const [awaiting, setAwaiting] = useState<{
+    id: string;
+    image: string | null;
+  } | null>(null);
+  const refreshes = useRef(0);
+  useEffect(() => {
+    if (!awaiting) return;
+    const image = initial.find((i) => i.id === awaiting.id)?.image ?? null;
+    if ((image && image !== awaiting.image) || refreshes.current >= 6)
+      return setAwaiting(null);
+    const t = setTimeout(() => {
+      refreshes.current++;
+      router.refresh();
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [awaiting, initial, router]);
+
   function onDelete(item: Item) {
+    undoCollections.current = folders
+      .filter((c) => c.itemIds.includes(item.id))
+      .map((c) => c.id);
     startTransition(async () => {
       patch({ type: "delete", id: item.id });
       const result = await deleteItem(item.id);
@@ -518,32 +881,92 @@ export function Stash({
       // ponytail: undo re-inserts, so the row comes back with a fresh id and
       // timestamp. Soft-delete only if that ever matters.
       patch({ type: "add", item });
-      const result = await createItem(formDataOf(item));
+      const result = await createItem(
+        formDataOf(item, undoCollections.current),
+      );
       if (result.error) setError({ message: result.error });
     });
   }
 
   function onEdit(item: Item) {
     // Editing a tool shows it in the pane, so the form and the preview agree.
-    if (item.kind === "tool") setSelectedId(item.id);
+    if (item.kind !== "formula") setSelectedId(item.id);
     openComposer(item);
   }
 
   // The no-match state offers to save what you just looked for: a host-like
   // query becomes the URL, anything else the title.
   function saveQuery() {
-    const hostLike = /^\S+\.\S+$/.test(q);
-    openComposer(null, hostLike ? { kind: "tool", url: q } : { title: q });
+    openComposer(
+      null,
+      looksLikeLink(q)
+        ? { kind: isMapsLink(q) ? "place" : "tool", url: q }
+        : { title: q },
+    );
   }
 
+  // Any item can be filed into collections, from wherever its actions live.
+  const filing: Filing = {
+    collections: folders,
+    onToggle: onToggleMember,
+    onCreate: onCreateCollection,
+  };
+
+  // A card only while its place is listed: pan it out of view and it closes.
+  const cardPlace = placesView
+    ? (inView.find((p) => p.id === cardFor) ?? null)
+    : null;
+  const card = cardPlace ? (
+    <PlaceCard
+      // Fresh per place, so an open Collections list does not carry over.
+      key={cardPlace.id}
+      item={cardPlace}
+      filing={filing}
+      onEdit={() => onEdit(cardPlace)}
+      onDelete={() => {
+        setCardFor(null);
+        onDelete(cardPlace);
+      }}
+      onClose={closeCard}
+    />
+  ) : null;
+
+  const map = placesView && mapShown && (
+    <PlaceMap
+      pins={pinned}
+      fit={fit}
+      // While Set location places one place, no other pin stays teal.
+      selectedId={dropping ? null : (selectedPlace?.id ?? null)}
+      hoveredId={hoveredId}
+      user={user}
+      locating={locating}
+      dropping={dropping?.title ?? null}
+      label={`Map of ${pinned.length} ${pinned.length === 1 ? "place" : "places"}${collection ? ` in ${collection.name}` : ""}`}
+      popover={card}
+      onSelect={(id) => {
+        if (id) return selectPlace(id, true);
+        setSelectedId(null);
+        setCardFor(null);
+      }}
+      onUserMove={setView}
+      onLocate={onLocate}
+      onDrop={onDrop}
+      onCancelDrop={() => setDropping(null)}
+    />
+  );
+
   return (
-    <div className="px-4 py-10 sm:px-6">
+    // Places on desktop is an app shell: the page stops scrolling, the index
+    // scrolls in its column, and the map fills the rest to the window's edge.
+    <div
+      className={`px-4 py-10 sm:px-6 ${shell ? "lg:flex lg:h-dvh lg:flex-col lg:pr-0 lg:pb-0" : ""}`}
+    >
       {/* The header and the rail's tag list sit ahead of search in tab order.
           Parked above the viewport until keyboard focus lands on it. */}
       <button
         type="button"
         onClick={() => searchRef.current?.focus()}
-        className={`bg-surface text-label text-ink border-border fixed top-2 left-2 z-10 -translate-y-16 rounded border px-3 py-2 focus-visible:translate-y-0 ${focusRing}`}
+        className={`bg-surface text-label text-ink border-border fixed top-2 left-2 z-10 -translate-y-16 rounded border px-3 py-2 font-medium focus-visible:translate-y-0 ${focusRing}`}
       >
         Skip to search
       </button>
@@ -567,7 +990,7 @@ export function Stash({
                 router.refresh();
               })
             }
-            className={`text-label text-muted hover:text-ink inline-flex h-9 shrink-0 items-center rounded px-1 disabled:pointer-events-none disabled:opacity-50 ${touch} ${focusRing}`}
+            className={`text-label text-muted hover:text-ink inline-flex h-9 shrink-0 items-center rounded px-1 font-medium disabled:pointer-events-none disabled:opacity-50 ${touch} ${focusRing}`}
           >
             Sign out
           </button>
@@ -584,16 +1007,23 @@ export function Stash({
         </div>
       </header>
 
-      <div className="mt-8 flex flex-col gap-8 lg:flex-row lg:gap-10">
+      <div
+        className={`mt-8 flex flex-col gap-8 lg:flex-row lg:gap-10 ${shell ? "lg:min-h-0 lg:flex-1" : ""}`}
+      >
         {/* One rail, two homes: a collapsible column on desktop, a slide-in
             drawer below lg. Rendered in exactly one so its ids stay unique. An
             empty stash has nothing to filter, so neither renders. */}
         {hasItems && wide && railOpen && (
-          <aside id="filters" className="w-52 shrink-0">
+          <aside
+            id="filters"
+            // In the Places shell the rail scrolls on its own; the inset keeps
+            // focus rings clear of its clipped edges.
+            className={`w-52 shrink-0 ${shell ? "relative -mx-1.5 -mt-1.5 box-content overflow-y-auto px-1.5 pt-1.5 pb-10" : ""}`}
+          >
             {/* ponytail: sticky pins the rail; a list taller than the viewport
                 just scrolls with the page. The tag list collapses to the most
                 used, so that takes a very large stash. */}
-            <div className="sticky top-10">{rail}</div>
+            <div className={shell ? "" : "sticky top-10"}>{rail}</div>
           </aside>
         )}
         {hasItems && !wide && (
@@ -618,7 +1048,7 @@ export function Stash({
                 <button
                   type="button"
                   onClick={() => drawerRef.current?.close()}
-                  className={`text-label text-muted hover:text-ink inline-flex items-center rounded px-2 py-2 ${touch} ${focusRing}`}
+                  className={`text-label text-muted hover:text-ink inline-flex items-center rounded px-2 py-2 font-medium ${touch} ${focusRing}`}
                 >
                   Done
                 </button>
@@ -628,7 +1058,27 @@ export function Stash({
           </dialog>
         )}
 
-        <main className="min-w-0 flex-1">
+        <main
+          // relative in the shell: screen-reader-only text inside must scroll with
+          // the column, not stretch the page past the window.
+          className={`min-w-0 ${shell ? "relative -mx-1.5 -mt-1.5 box-content w-88 flex-none overflow-y-auto px-1.5 pt-1.5 pb-10" : "flex-1"}`}
+        >
+          {/* An empty stash leads with its own first-run message instead. */}
+          {(hasItems || collection) && (
+            <IndexHeading
+              key={collection?.id ?? tab}
+              collection={collection}
+              fallback={
+                {
+                  all: "Everything",
+                  tool: "Tools",
+                  formula: "Formulae",
+                  place: "Places",
+                }[tab]
+              }
+              onDelete={() => collection && onDeleteCollection(collection)}
+            />
+          )}
           <div className="flex gap-2">
             {hasItems && (
               <button
@@ -636,7 +1086,7 @@ export function Stash({
                 onClick={toggleFilters}
                 aria-controls={tabsRendered ? "filters" : undefined}
                 aria-expanded={wide ? railOpen : undefined}
-                className={`border-field text-label text-muted hover:text-ink flex shrink-0 items-center gap-2 rounded border px-3 transition-colors duration-150 ${focusRing}`}
+                className={`border-field text-label text-muted hover:text-ink flex shrink-0 items-center gap-2 rounded border px-3 font-medium transition-colors duration-150 ${focusRing}`}
               >
                 <PanelIcon />
                 <span>{wide && railOpen ? "Hide filters" : "Filters"}</span>
@@ -659,9 +1109,11 @@ export function Stash({
                 // The long form names what's searched; a phone has room for
                 // a few words beside the Filters button.
                 placeholder={
-                  wide
-                    ? "Search titles, sites, commands…"
-                    : "Search your stash…"
+                  placesView
+                    ? "Search places…"
+                    : wide
+                      ? "Search titles, sites, commands, places…"
+                      : "Search your stash…"
                 }
                 aria-label="Search your stash"
                 aria-describedby={hasItems ? "search-summary" : undefined}
@@ -691,11 +1143,20 @@ export function Stash({
               >
                 {summary}
               </p>
+              {placesView && narrowed && (
+                <button
+                  type="button"
+                  onClick={() => setShowAll((n) => n + 1)}
+                  className={`text-accent shrink-0 rounded font-medium underline underline-offset-2 ${focusRing}`}
+                >
+                  Show all
+                </button>
+              )}
               {filtering && (
                 <button
                   type="button"
                   onClick={clearAll}
-                  className={`text-accent shrink-0 rounded underline underline-offset-2 ${focusRing}`}
+                  className={`text-accent shrink-0 rounded font-medium underline underline-offset-2 ${focusRing}`}
                 >
                   Clear
                 </button>
@@ -703,36 +1164,31 @@ export function Stash({
             </div>
           )}
 
-          {composer ? (
-            <ComposerForm
-              key={composer.key}
-              editing={composer.editing}
-              defaults={composer.defaults}
-              restored={composer.restored}
-              error={error}
-              formRef={formRef}
-              firstRef={firstRef}
-              onCancel={() => closeComposer()}
-              onDiscard={discardDraft}
-              onSubmit={onSubmit}
-            />
-          ) : (
-            // An empty stash leads with its own "Save your first" instead.
-            hasItems && (
-              <button
-                ref={triggerRef}
-                type="button"
-                onClick={() => openComposer()}
-                className={`border-border text-body text-muted hover:border-accent hover:text-ink mt-6 flex w-full items-center justify-between rounded border border-dashed px-3 py-2.5 text-left transition-colors duration-150 ${focusRing}`}
-              >
-                <span>
-                  <span aria-hidden="true">+ </span>Save a tool or a formula…
-                </span>
-                <kbd className="border-border text-label rounded border px-1.5 py-0.5 pointer-coarse:hidden">
-                  a
-                </kbd>
-              </button>
-            )
+          {/* An empty stash leads with its own "Save your first" instead. */}
+          {hasItems && (
+            <button
+              ref={triggerRef}
+              type="button"
+              aria-haspopup="dialog"
+              onClick={() => openComposer()}
+              className={`border-border text-body text-muted hover:border-accent hover:text-ink mt-6 flex w-full items-center justify-between rounded border border-dashed px-3 py-2.5 text-left font-medium transition-colors duration-150 ${focusRing}`}
+            >
+              <span>
+                <span aria-hidden="true">+ </span>
+                {placesView
+                  ? "Paste a maps link…"
+                  : "Save a tool, a formula, or a place…"}
+              </span>
+              <kbd className="border-border text-label rounded border px-1.5 py-0.5 pointer-coarse:hidden">
+                a
+              </kbd>
+            </button>
+          )}
+
+          {map && !wide && (
+            <div className="border-border sticky top-0 z-10 -mx-4 mt-6 h-[50dvh] border-y sm:-mx-6">
+              {map}
+            </div>
           )}
 
           <div
@@ -742,7 +1198,106 @@ export function Stash({
               ? { "aria-labelledby": `kind-tab-${tab}` }
               : { "aria-label": "Results" })}
           >
-            {visible.length === 0 ? (
+            {placesView ? (
+              !mapShown ? (
+                // Same place and treatment as every other empty view: centred
+                // under the trigger.
+                <div className="mt-16 text-center">
+                  <p
+                    lang={langOf(collection?.name ?? "")}
+                    className="text-title text-ink font-serif"
+                  >
+                    {collection
+                      ? collection.itemIds.length === 0
+                        ? `Nothing in ${collection.name} yet.`
+                        : `No places in ${collection.name} yet.`
+                      : "No places yet."}
+                  </p>
+                  <p className="text-body text-muted mx-auto mt-2 max-w-md">
+                    {collection
+                      ? "Paste a maps link and it lands here, or file a saved place from its card on the map."
+                      : "Paste a Google Maps or Apple Maps link to save one."}
+                  </p>
+                </div>
+              ) : places.length === 0 ? (
+                <Empty
+                  hasItems
+                  query={q}
+                  filtered={!!activeTag}
+                  onAdd={() => openComposer()}
+                  onClear={clearAll}
+                  onSaveQuery={saveQuery}
+                />
+              ) : (
+                <div className="mt-4">
+                  {listed.length > 0 ? (
+                    <ul className="divide-border border-border divide-y border-y">
+                      {listed.map((item) => (
+                        <PlaceRow
+                          key={item.id}
+                          item={item}
+                          selected={selectedPlace?.id === item.id}
+                          distance={
+                            user ? formatDistance(distance(user, item)) : null
+                          }
+                          onSelect={() => selectPlace(item.id)}
+                          onFocus={() =>
+                            selectedId !== item.id && selectPlace(item.id)
+                          }
+                          onHover={setHoveredId}
+                          onActivate={() => enterCard(item.id)}
+                        />
+                      ))}
+                    </ul>
+                  ) : (
+                    pinned.length > 0 && (
+                      <p className="text-label text-muted mt-6">
+                        No places in this part of the map.
+                      </p>
+                    )
+                  )}
+                  {unpinned.length > 0 && (
+                    <section className="mt-10">
+                      <SectionHeading count={unpinned.length} quiet={false}>
+                        Not on the map
+                      </SectionHeading>
+                      <ul className="divide-border divide-y">
+                        {unpinned.map((item) => (
+                          <UnpinnedRow
+                            key={item.id}
+                            item={item}
+                            onPin={() => {
+                              setDropping(item);
+                              setCardFor(null);
+                              // The narrow map sits at the top of the page.
+                              if (!wide) window.scrollTo({ top: 0 });
+                            }}
+                            onEdit={() => onEdit(item)}
+                            onDelete={() => onDelete(item)}
+                          />
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+                </div>
+              )
+            ) : visible.length === 0 &&
+              collection?.itemIds.length === 0 &&
+              !q &&
+              !activeTag ? (
+              <div className="mt-16 text-center">
+                <p
+                  lang={langOf(collection.name)}
+                  className="text-title text-ink font-serif"
+                >
+                  Nothing in {collection.name} yet.
+                </p>
+                <p className="text-body text-muted mx-auto mt-2 max-w-md">
+                  Save something while it&apos;s open and it lands here, or file
+                  a saved item from its Collections button.
+                </p>
+              </div>
+            ) : visible.length === 0 ? (
               <Empty
                 hasItems={hasItems}
                 query={q}
@@ -775,6 +1330,7 @@ export function Stash({
                           }
                           onEdit={() => onEdit(item)}
                           onDelete={() => onDelete(item)}
+                          filing={filing}
                         />
                       ))}
                     </ul>
@@ -796,6 +1352,24 @@ export function Stash({
                           item={item}
                           onEdit={() => onEdit(item)}
                           onDelete={() => onDelete(item)}
+                          filing={filing}
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
+                {places.length > 0 && (
+                  <section>
+                    <SectionHeading count={places.length} quiet={false}>
+                      Places
+                    </SectionHeading>
+                    <ul className="divide-border divide-y">
+                      {places.map((item) => (
+                        <PlaceLink
+                          key={item.id}
+                          item={item}
+                          onOpen={() => openPlace(item.id)}
                         />
                       ))}
                     </ul>
@@ -806,12 +1380,19 @@ export function Stash({
           </div>
         </main>
 
-        {active ? (
+        {shell ? (
+          <div className="border-border min-w-0 flex-1 border-t border-l">
+            {map}
+          </div>
+        ) : active ? (
           <DetailPane
+            // Fresh per tool, so an open Collections list does not carry over.
+            key={active.id}
             item={active}
             containerRef={paneRef}
             onEdit={() => onEdit(active)}
             onDelete={() => onDelete(active)}
+            filing={filing}
           />
         ) : (
           // Hold the pane's column while no tool is showing (the Formulae tab,
@@ -821,10 +1402,31 @@ export function Stash({
         )}
       </div>
 
+      {/* The dialog outlives the keyed form, so Discard swaps the fields without
+          closing and reopening the popup. */}
+      {composer && (
+        <Modal labelledBy="composer-title" onClose={() => closeComposer()}>
+          <ComposerForm
+            key={composer.key}
+            collection={collection}
+            placesView={placesView}
+            editing={composer.editing}
+            defaults={composer.defaults}
+            restored={composer.restored}
+            error={error}
+            formRef={formRef}
+            firstRef={firstRef}
+            onCancel={() => closeComposer()}
+            onDiscard={discardDraft}
+            onSubmit={onSubmit}
+          />
+        </Modal>
+      )}
+
       {/* Delete and undo run with the composer closed, where its inline error
           banner never renders. Surface those failures here instead. */}
       {/* One stack, so an error and the undo offer never cover each other. */}
-      <div className="fixed inset-x-4 bottom-4 mx-auto flex max-w-sm flex-col gap-2">
+      <div className="fixed inset-x-4 bottom-4 ml-auto flex max-w-sm flex-col gap-2">
         {error && !composer && (
           <div role="alert" className={toast}>
             <span className="text-label text-danger">
@@ -906,6 +1508,7 @@ function KindTabs({
     { value: "all", label: "All" },
     { value: "tool", label: "Tools" },
     { value: "formula", label: "Formulae" },
+    { value: "place", label: "Places" },
   ];
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -946,7 +1549,7 @@ function KindTabs({
             tabIndex={on ? 0 : -1}
             onClick={() => onTab(value)}
             onKeyDown={(e) => onKeyDown(e, i)}
-            className={`text-label rounded transition-colors duration-150 ${touch} ${focusRing} flex w-full items-center justify-between gap-1.5 px-2 py-2.5 lg:py-1.5 ${
+            className={`text-label rounded font-medium transition-colors duration-150 ${touch} ${focusRing} flex w-full items-center justify-between gap-1.5 px-2 py-2.5 lg:py-1.5 ${
               on ? "bg-accent text-bg" : segmentOff
             }`}
           >
@@ -986,6 +1589,10 @@ function FilterRail({
   tab,
   onTab,
   kindCounts,
+  collections,
+  activeCollection,
+  onCollection,
+  onCreateCollection,
   tags,
   tagCounts,
   tagTotals,
@@ -995,6 +1602,10 @@ function FilterRail({
   tab: Tab;
   onTab: (tab: Tab) => void;
   kindCounts: Record<Tab, number>;
+  collections: (Collection & { count: number })[];
+  activeCollection: string | null;
+  onCollection: (id: string | null) => void;
+  onCreateCollection: (name: string) => Promise<string | undefined>;
   tags: string[];
   tagCounts: Map<string, number>;
   tagTotals: Map<string, number>;
@@ -1026,6 +1637,39 @@ function FilterRail({
           onTab={onTab}
           counts={kindCounts}
           labelledBy="rail-kind"
+        />
+      </div>
+
+      {/* Groups of places: a trip, a list worth keeping. Opening one shows its
+          places on the map. */}
+      <div>
+        <h2 id="rail-collections" className={railHeading}>
+          Collections
+        </h2>
+        {collections.length > 0 && (
+          <div
+            role="group"
+            aria-labelledby="rail-collections"
+            className="mt-1.5 flex flex-col gap-0.5"
+          >
+            {collections.map((c) => {
+              const on = activeCollection === c.id;
+              return (
+                <FilterRow
+                  key={c.id}
+                  label={c.name}
+                  count={c.count}
+                  active={on}
+                  onClick={() => onCollection(on ? null : c.id)}
+                />
+              );
+            })}
+          </div>
+        )}
+        <NewCollection
+          label="New collection"
+          onCreate={onCreateCollection}
+          className="mt-1"
         />
       </div>
 
@@ -1090,7 +1734,7 @@ function FilterRow({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`text-label flex w-full items-center justify-between gap-1.5 rounded px-2 py-2.5 transition-colors duration-150 lg:py-1.5 ${touch} ${focusRing} ${
+      className={`text-label flex w-full items-center justify-between gap-1.5 rounded px-2 py-2.5 font-medium transition-colors duration-150 lg:py-1.5 ${touch} ${focusRing} ${
         active
           ? "bg-accent text-bg"
           : "text-muted hover:bg-surface hover:text-ink"
@@ -1113,7 +1757,51 @@ function FilterRow({
   );
 }
 
+// The add/edit popup: a native modal <dialog>, so the browser traps focus,
+// makes the page behind it inert, and turns Esc into a close. Mounted once per
+// opening; a layout effect so it is open before the form's own effect puts the
+// cursor in the field.
+function Modal({
+  labelledBy,
+  onClose,
+  children,
+}: {
+  labelledBy: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  // Set on pointerdown, so a text selection dragged out of a field and
+  // released on the backdrop doesn't read as a backdrop click.
+  const downOnBackdrop = useRef(false);
+
+  useLayoutEffect(() => {
+    ref.current?.showModal();
+  }, []);
+
+  return (
+    <dialog
+      ref={ref}
+      aria-labelledby={labelledBy}
+      // Esc closes the dialog natively; this hands that close to React, which
+      // keeps the draft and returns focus. Unmounting fires no close event.
+      onClose={onClose}
+      onPointerDown={(e) => {
+        downOnBackdrop.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) =>
+        downOnBackdrop.current && e.target === e.currentTarget && onClose()
+      }
+      className="bg-bg text-ink border-border mx-auto mt-[12vh] max-h-[80dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-lg border p-0 shadow-lg backdrop:bg-black/40"
+    >
+      {children}
+    </dialog>
+  );
+}
+
 function ComposerForm({
+  collection,
+  placesView,
   editing,
   defaults,
   restored,
@@ -1124,6 +1812,8 @@ function ComposerForm({
   onDiscard,
   onSubmit,
 }: {
+  collection: Collection | null;
+  placesView: boolean;
   editing: Item | null;
   defaults: Draft;
   restored: boolean;
@@ -1135,30 +1825,56 @@ function ComposerForm({
   onSubmit: (formData: FormData) => Promise<void>;
 }) {
   // Mounted fresh per opening (keyed by the parent), so the kind and every
-  // field start from `defaults` and the first field is the one on screen.
-  const [kind, setKind] = useState<"tool" | "formula">(
-    defaults.kind === "formula" ? "formula" : "tool",
+  // field start from `defaults`.
+  const [kind, setKind] = useState<"tool" | "formula" | "place">(
+    defaults.kind === "formula" || defaults.kind === "place"
+      ? defaults.kind
+      : placesView
+        ? "place"
+        : "tool",
+  );
+  // What you paste picks the kind (a maps link is a place, any other link a
+  // tool, anything else a command) until you pick one yourself. An edit keeps
+  // the kind it was saved with.
+  const [picked, setPicked] = useState(!!editing);
+  // Everything behind "Add details" is optional: the server titles a tool from
+  // its site and a formula from its command. Open when there is something in
+  // them to see.
+  const [details, setDetails] = useState(
+    [editing, defaults.title, defaults.description, defaults.tags].some(
+      Boolean,
+    ),
   );
   const [saving, startSaving] = useTransition();
+  const main = kind === "formula" ? "cmd" : "url";
+  // Our own empty-field check (the form is noValidate): the browser's bubble
+  // ignores the theme and floats over the layout instead of sitting in it.
+  const [missing, setMissing] = useState(false);
+  const shown: Failure | null = missing
+    ? { message: "Paste a link or a command first.", field: main }
+    : error;
 
-  // The thing you paste goes first and takes focus — on open and again on a
-  // kind switch, which swaps that field out: capture costs nothing.
+  // One field takes focus — on open and again on a kind switch: capture costs
+  // nothing.
   useEffect(() => {
     firstRef.current?.focus();
   }, [kind, firstRef]);
 
-  // A rejected save puts the cursor in the field that caused it.
+  // A rejected save puts the cursor in the field that caused it, opening the
+  // details first when that field is behind them.
   useEffect(() => {
-    if (error?.field)
-      formRef.current
-        ?.querySelector<HTMLElement>(`[name="${error.field}"]`)
-        ?.focus();
+    const name = error?.field;
+    if (!name) return;
+    if (["title", "description", "tags"].includes(name)) setDetails(true);
+    requestAnimationFrame(() =>
+      formRef.current?.querySelector<HTMLElement>(`[name="${name}"]`)?.focus(),
+    );
   }, [error, formRef]);
 
   // Ties a field to the error it caused, so it reads as invalid and the
   // message is announced with it.
   const invalid = (name: string) =>
-    error?.field === name
+    shown?.field === name
       ? { "aria-invalid": true, "aria-describedby": "composer-error" }
       : {};
 
@@ -1172,177 +1888,248 @@ function ComposerForm({
         event.preventDefault();
         if (saving) return; // no second create/update from an Enter-mash
         const formData = new FormData(event.currentTarget);
+        if (!text(formData, main).trim()) {
+          setMissing(true);
+          firstRef.current?.focus();
+          return;
+        }
         startSaving(() => onSubmit(formData));
       }}
-      aria-label={
-        editing ? `Edit ${editing.title}` : "Save a tool or a formula"
-      }
-      className="border-border bg-surface mt-6 flex flex-col gap-3 rounded border p-4"
+      noValidate
     >
       <input type="hidden" name="kind" value={kind} />
+      {/* Saved with a collection open, a new item is filed there too. */}
+      {!editing && collection && (
+        <input type="hidden" name="collection" value={collection.id} />
+      )}
 
-      <div className="flex items-center gap-1">
-        <div
-          className="flex gap-1"
-          role="group"
-          aria-label="What are you saving?"
-        >
-          {(["tool", "formula"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={kind === value}
-              onClick={() => setKind(value)}
-              className={`${segment} inline-flex items-center gap-1.5 ${
-                kind === value ? "bg-accent text-bg" : segmentOff
-              }`}
-            >
-              {/* Reserved ✓ slot, no weight change — same treatment as KindTabs, so
-                  switching tool↔formula never reflows the pair. */}
-              <span
-                aria-hidden="true"
-                className={kind === value ? "" : "invisible"}
-              >
-                ✓
-              </span>
-              <span>{value === "tool" ? "Tool" : "Formula"}</span>
-            </button>
-          ))}
+      <div className="flex flex-col gap-4 p-5">
+        <div className="flex items-center justify-between gap-4">
+          <h2
+            id="composer-title"
+            className="text-title text-ink min-w-0 truncate font-serif"
+          >
+            {editing
+              ? `Edit ${editing.title}`
+              : collection
+                ? `Save to ${collection.name}`
+                : "Save to your stash"}
+          </h2>
+          {/* -mr-2 sets the mark on the field's right edge, not the button's. */}
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Close"
+            className={`${quietButton} hover:text-ink -mr-2 shrink-0`}
+          >
+            ✕
+          </button>
         </div>
-        {restored && (
-          <p className="text-label text-muted ml-auto flex items-center gap-1">
-            Your unsaved draft.
-            <button
-              type="button"
-              onClick={onDiscard}
-              className={`${quietButton} hover:text-ink underline underline-offset-2`}
-            >
-              Discard
-            </button>
-          </p>
-        )}
-      </div>
 
-      {/* The thing you paste comes first and takes focus: capture costs
-          nothing. Title is optional; the server falls back to the host or the
-          command. Visible labels, so a half-filled form still says what each
-          field is. */}
-      {kind === "tool" ? (
-        <label className={fieldLabel}>
-          URL
-          <input
-            ref={(el) => {
-              firstRef.current = el;
-            }}
-            name="url"
-            required
-            maxLength={2048}
-            defaultValue={defaults.url}
-            placeholder="ripgrep.dev"
-            // Not type="url": that rejects the bare host ("ripgrep.dev") the
-            // server is happy to complete. The URL keyboard, no autocorrect.
-            inputMode="url"
-            autoCapitalize="off"
-            autoCorrect="off"
-            autoComplete="off"
-            spellCheck={false}
-            {...invalid("url")}
-            className={`${field} font-mono`}
-          />
-        </label>
-      ) : (
-        <label className={fieldLabel}>
-          Command
+        <div className="flex flex-col gap-3">
+          {/* A textarea so a long command can wrap, sized to its content; Enter
+              still saves, as in a one-line field. Its name follows the kind. */}
           <textarea
             ref={(el) => {
               firstRef.current = el;
             }}
-            name="cmd"
+            name={main}
+            aria-label="Link or command"
             required
-            rows={2}
-            maxLength={8000}
-            defaultValue={defaults.cmd}
-            placeholder="rg -i --hidden 'TODO'"
+            rows={1}
+            maxLength={kind === "formula" ? 8000 : 2048}
+            defaultValue={defaults.url ?? defaults.cmd}
+            placeholder={
+              // Until a kind is in play the field takes either; after, it asks
+              // for that kind's thing.
+              picked || placesView
+                ? {
+                    tool: "Paste a link…",
+                    formula: "Paste a command…",
+                    place: "Paste a Google Maps or Apple Maps link…",
+                  }[kind]
+                : "Paste a link or a command…"
+            }
             autoCapitalize="off"
             autoCorrect="off"
+            autoComplete="off"
             spellCheck={false}
-            {...invalid("cmd")}
-            className={`${field} font-mono`}
+            onChange={(e) => {
+              const value = e.target.value;
+              setMissing(false);
+              if (!picked && value.trim())
+                setKind(
+                  isMapsLink(value)
+                    ? "place"
+                    : looksLikeLink(value)
+                      ? "tool"
+                      : "formula",
+                );
+            }}
+            onKeyDown={(e) => {
+              // Shift+Enter breaks a long command; an IME's Enter commits Thai.
+              if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing)
+                return;
+              e.preventDefault();
+              e.currentTarget.form?.requestSubmit();
+            }}
+            {...invalid(main)}
+            className={`${field} field-sizing-content max-h-40 resize-none`}
           />
-        </label>
-      )}
+          {/* The main field's error sits under it; the rest at the end. */}
+          {shown?.field === main && <ErrorLine message={shown.message} />}
 
-      <label className={fieldLabel}>
-        <span>
-          Title <span className="text-muted">(optional)</span>
-        </span>
-        <input
-          name="title"
-          maxLength={200}
-          defaultValue={defaults.title}
-          placeholder={
-            kind === "tool" ? "Defaults to the site" : "Defaults to the command"
-          }
-          {...invalid("title")}
-          className={field}
-        />
-      </label>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span id="composer-kind" className="text-label text-muted">
+              Saving as
+            </span>
+            {/* One segmented control: three equal thirds, each wide enough for
+                "✓ Formula", so the ✓ moving across never resizes it. */}
+            <div
+              role="group"
+              aria-labelledby="composer-kind"
+              className="border-field inline-grid grid-cols-3 rounded-md border p-0.5"
+            >
+              {(["tool", "formula", "place"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={kind === value}
+                  onClick={() => {
+                    setKind(value);
+                    setPicked(true);
+                  }}
+                  className={`${segment} inline-flex min-w-24 items-center justify-center gap-1.5 ${
+                    kind === value ? "bg-accent text-bg" : segmentOff
+                  }`}
+                >
+                  {kind === value && <span aria-hidden="true">✓</span>}
+                  {value === "tool"
+                    ? "Tool"
+                    : value === "formula"
+                      ? "Formula"
+                      : "Place"}
+                </button>
+              ))}
+            </div>
+            {restored && (
+              <p className="text-label text-muted ml-auto flex items-center">
+                Unsaved draft.
+                <button
+                  type="button"
+                  onClick={onDiscard}
+                  className={`${quietButton} hover:text-ink -mr-2 underline underline-offset-2`}
+                >
+                  Discard
+                </button>
+              </p>
+            )}
+          </div>
+        </div>
 
-      <label className={fieldLabel}>
-        <span>
-          What it&apos;s for <span className="text-muted">(optional)</span>
-        </span>
-        <input
-          name="description"
-          maxLength={2000}
-          defaultValue={defaults.description}
-          {...invalid("description")}
-          className={field}
-        />
-      </label>
-
-      <label className={fieldLabel}>
-        <span>
-          Tags <span className="text-muted">(optional, comma separated)</span>
-        </span>
-        <input
-          name="tags"
-          defaultValue={defaults.tags}
-          placeholder="git, ssh"
-          autoCapitalize="off"
-          {...invalid("tags")}
-          className={field}
-        />
-      </label>
-
-      {error && (
-        <p id="composer-error" role="alert" className="text-label text-danger">
-          <span aria-hidden="true">✕ </span>
-          {error.message}
-        </p>
-      )}
-
-      <div className="flex items-center gap-2">
-        {/* Doubles as the save's busy state — "Saving…" while the action runs. */}
-        <button
-          type="submit"
-          disabled={saving}
-          className={`bg-accent text-body text-bg rounded px-4 py-2 transition-opacity duration-150 hover:opacity-90 disabled:opacity-60 disabled:hover:opacity-60 ${focusRing}`}
+        {/* Hidden fields still submit, so a draft survives collapsing them. */}
+        <div
+          id="composer-details"
+          hidden={!details}
+          className="flex flex-col gap-3"
         >
-          {saving ? "Saving…" : editing ? "Save changes" : "Save"}
+          <label className={fieldLabel}>
+            Title
+            <input
+              name="title"
+              maxLength={200}
+              defaultValue={defaults.title}
+              placeholder={
+                kind === "tool"
+                  ? "Defaults to the site"
+                  : kind === "place"
+                    ? "Defaults to the place's name"
+                    : "Defaults to the command"
+              }
+              {...invalid("title")}
+              className={field}
+            />
+          </label>
+
+          <label className={fieldLabel}>
+            What it&apos;s for
+            <input
+              name="description"
+              maxLength={2000}
+              defaultValue={defaults.description}
+              {...invalid("description")}
+              className={field}
+            />
+          </label>
+
+          <label className={fieldLabel}>
+            <span>
+              Tags{" "}
+              <span className="text-muted font-normal">(comma separated)</span>
+            </span>
+            <input
+              name="tags"
+              defaultValue={defaults.tags}
+              placeholder="git, ssh"
+              autoCapitalize="off"
+              {...invalid("tags")}
+              className={field}
+            />
+          </label>
+        </div>
+
+        {shown && shown.field !== main && <ErrorLine message={shown.message} />}
+      </div>
+
+      {/* The action bar: one surface step down, so the buttons read as the
+          popup's end rather than one more row of fields. */}
+      <div className="border-border bg-surface flex items-center gap-2 border-t px-5 py-3">
+        <button
+          type="button"
+          aria-expanded={details}
+          aria-controls="composer-details"
+          onClick={() => {
+            setDetails(!details);
+            // The fields open above this button; put the cursor in the first.
+            if (!details)
+              requestAnimationFrame(() =>
+                formRef.current
+                  ?.querySelector<HTMLElement>('[name="title"]')
+                  ?.focus(),
+              );
+          }}
+          className={`${quietButton} hover:text-ink -ml-2`}
+        >
+          {details ? "− Hide details" : "+ Add details"}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className={`text-body text-muted hover:text-ink rounded px-3 py-2 ${focusRing}`}
+          className={`text-body text-muted hover:text-ink ml-auto rounded px-3 py-2 font-medium ${focusRing}`}
         >
           Cancel
         </button>
-        <span className="text-label text-muted ml-auto pointer-coarse:hidden">
-          Esc to close
-        </span>
+        {/* Doubles as the save's busy state — "Saving…" while the action runs. */}
+        <button
+          type="submit"
+          disabled={saving}
+          className={`bg-accent text-body text-bg rounded px-4 py-2 font-medium transition-opacity duration-150 hover:opacity-90 disabled:opacity-60 disabled:hover:opacity-60 ${focusRing}`}
+        >
+          {saving ? "Saving…" : editing ? "Save changes" : "Save"}
+        </button>
       </div>
     </form>
+  );
+}
+
+// The composer's error, announced as it appears; aria-describedby on the field
+// it names points here.
+function ErrorLine({ message }: { message: string }) {
+  return (
+    <p id="composer-error" role="alert" className="text-label text-danger">
+      <span aria-hidden="true">✕ </span>
+      {message}
+    </p>
   );
 }
 
@@ -1354,6 +2141,7 @@ function Row({
   onActivate,
   onEdit,
   onDelete,
+  filing,
 }: {
   item: Item;
   selectable: boolean;
@@ -1362,7 +2150,9 @@ function Row({
   onActivate?: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  filing: Filing;
 }) {
+  const [filingOpen, setFilingOpen] = useState(false);
   const host = item.url ? hostOf(item.url) : null;
   // A defaulted title already is the host; printing both reads as a stutter.
   const showHost = host && host !== item.title;
@@ -1402,7 +2192,7 @@ function Row({
           onFocus={onSelect}
           onKeyDown={onKeyDown}
           aria-current={selected ? "true" : undefined}
-          className={`flex w-full items-start gap-4 py-4 text-left transition-colors duration-150 ${focusRing} ${
+          className={`flex w-full items-center gap-4 px-3 py-4 text-left transition-colors duration-150 ${focusRing} ${
             selected ? "bg-surface" : "hover:bg-surface"
           }`}
         >
@@ -1478,7 +2268,7 @@ function Row({
         {item.description && (
           <p
             lang={langOf(item.description)}
-            className="text-body leading-thai text-muted mt-1"
+            className="text-body text-muted mt-1 leading-relaxed"
           >
             {item.description}
           </p>
@@ -1495,7 +2285,13 @@ function Row({
         )}
       </div>
 
-      <div className="row-actions col-start-2 mt-1 -ml-2 flex gap-1 transition-opacity duration-150 sm:col-start-auto sm:mt-0 sm:ml-0">
+      <div className="row-actions col-start-2 mt-1 -ml-2 flex flex-wrap gap-1 transition-opacity duration-150 sm:col-start-auto sm:mt-0 sm:ml-0">
+        <CollectionsButton
+          item={item}
+          filing={filing}
+          open={filingOpen}
+          onClick={() => setFilingOpen(!filingOpen)}
+        />
         <button
           type="button"
           onClick={onEdit}
@@ -1513,6 +2309,13 @@ function Row({
           Delete
         </button>
       </div>
+      {filingOpen && (
+        <CollectionsPanel
+          item={item}
+          filing={filing}
+          className="border-border col-span-full mt-3 border-t pt-2"
+        />
+      )}
     </li>
   );
 }
@@ -1554,7 +2357,10 @@ function RowTile({ item, className = "" }: { item: Item; className?: string }) {
     );
   }
 
-  const letter = (hostOf(item.url ?? item.title)[0] ?? "•").toUpperCase();
+  const letter = (
+    (item.kind === "place" ? item.title : hostOf(item.url ?? item.title))[0] ??
+    "•"
+  ).toUpperCase();
   return (
     <div
       className={`${tileBase} text-title sm:text-headline text-ink font-serif ${className}`}
@@ -1576,12 +2382,15 @@ function DetailPane({
   containerRef,
   onEdit,
   onDelete,
+  filing,
 }: {
   item: Item;
   containerRef: React.RefObject<HTMLElement | null>;
   onEdit: () => void;
   onDelete: () => void;
+  filing: Filing;
 }) {
+  const [filingOpen, setFilingOpen] = useState(false);
   return (
     <aside
       ref={containerRef}
@@ -1603,7 +2412,7 @@ function DetailPane({
 
       <h2
         lang={langOf(item.title)}
-        className="text-display leading-thai text-ink font-serif text-balance break-words"
+        className="text-display text-ink font-serif leading-tight text-balance break-words"
       >
         {item.title}
       </h2>
@@ -1614,7 +2423,7 @@ function DetailPane({
             href={item.url}
             target="_blank"
             rel="noopener noreferrer"
-            className={`bg-accent text-body text-bg rounded px-4 py-2 transition-opacity duration-150 hover:opacity-90 ${focusRing}`}
+            className={`bg-accent text-body text-bg rounded px-4 py-2 font-medium transition-opacity duration-150 hover:opacity-90 ${focusRing}`}
           >
             Open <span aria-hidden="true">↗</span>
           </a>
@@ -1627,7 +2436,7 @@ function DetailPane({
       {item.description && (
         <p
           lang={langOf(item.description)}
-          className="text-body leading-thai text-ink"
+          className="text-body text-ink leading-relaxed"
         >
           {item.description}
         </p>
@@ -1643,7 +2452,13 @@ function DetailPane({
         </ul>
       )}
 
-      <div className="mt-1 -ml-2 flex gap-1">
+      <div className="mt-1 -ml-2 flex flex-wrap gap-1">
+        <CollectionsButton
+          item={item}
+          filing={filing}
+          open={filingOpen}
+          onClick={() => setFilingOpen(!filingOpen)}
+        />
         <button
           type="button"
           onClick={onEdit}
@@ -1661,7 +2476,52 @@ function DetailPane({
           Delete
         </button>
       </div>
+      {filingOpen && <CollectionsPanel item={item} filing={filing} />}
     </aside>
+  );
+}
+
+// A place in the All view: a serif title over its area and tags, and one
+// action, which opens it on the map. No tile: a place has nothing to show in
+// one that its name doesn't already say.
+function PlaceLink({ item, onOpen }: { item: Item; onOpen: () => void }) {
+  const meta = [areaOf(item.address), ...item.tags].filter(Boolean).join(" · ");
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className={`hover:bg-surface flex w-full items-center gap-4 px-3 py-4 text-left transition-colors duration-150 ${focusRing}`}
+      >
+        <span className="min-w-0 flex-1">
+          <span
+            lang={langOf(item.title)}
+            className="text-title leading-thai text-ink line-clamp-2 block font-serif break-words sm:line-clamp-1"
+          >
+            {item.title}
+          </span>
+          {meta && (
+            <span
+              lang={langOf(meta)}
+              className="text-label text-muted mt-0.5 block truncate"
+            >
+              {meta}
+            </span>
+          )}
+        </span>
+        <span
+          className={`text-label hidden shrink-0 font-medium sm:inline ${item.lat === null ? "text-muted" : "text-accent"}`}
+        >
+          {item.lat === null ? "Not on the map" : "Show on map"}
+        </span>
+        <span
+          aria-hidden="true"
+          className="text-title text-muted shrink-0 sm:hidden"
+        >
+          ›
+        </span>
+      </button>
+    </li>
   );
 }
 
@@ -1691,7 +2551,10 @@ function PreviewTile({ item }: { item: Item }) {
     );
   }
 
-  const letter = (hostOf(item.url ?? item.title)[0] ?? "•").toUpperCase();
+  const letter = (
+    (item.kind === "place" ? item.title : hostOf(item.url ?? item.title))[0] ??
+    "•"
+  ).toUpperCase();
   return (
     <div
       className={`${base} text-display text-ink font-serif`}
@@ -1725,7 +2588,7 @@ function Empty({
           <button
             type="button"
             onClick={onClear}
-            className={`text-label text-accent rounded underline underline-offset-2 ${focusRing}`}
+            className={`text-label text-accent rounded font-medium underline underline-offset-2 ${focusRing}`}
           >
             {query && filtered
               ? "Clear search and filters"
@@ -1738,7 +2601,7 @@ function Empty({
             <button
               type="button"
               onClick={onSaveQuery}
-              className={`text-label text-accent max-w-full truncate rounded underline underline-offset-2 ${focusRing}`}
+              className={`text-label text-accent max-w-full truncate rounded font-medium underline underline-offset-2 ${focusRing}`}
             >
               Save “{query}”
             </button>
@@ -1752,11 +2615,13 @@ function Empty({
     <div className="mt-16 max-w-md">
       <p className="text-title text-ink font-serif">Your stash is empty.</p>
       <p className="text-body text-muted mt-2">
-        Two things live here. A{" "}
+        Three things live here. A{" "}
         <strong className="text-ink font-semibold">tool</strong> is a link you
         keep losing. A{" "}
         <strong className="text-ink font-semibold">formula</strong> is a command
-        you keep re-deriving.
+        you keep re-deriving. A{" "}
+        <strong className="text-ink font-semibold">place</strong> is a maps link
+        to somewhere you mean to go.
       </p>
       {/* Keyboard shortcuts mean nothing on a phone. */}
       <p className="text-body text-muted mt-4 pointer-coarse:hidden">
@@ -1773,7 +2638,7 @@ function Empty({
       <button
         type="button"
         onClick={onAdd}
-        className={`bg-accent text-body text-bg mt-6 rounded px-4 py-2 transition-opacity duration-150 hover:opacity-90 ${focusRing}`}
+        className={`bg-accent text-body text-bg mt-6 rounded px-4 py-2 font-medium transition-opacity duration-150 hover:opacity-90 ${focusRing}`}
       >
         Save your first
       </button>
@@ -1821,93 +2686,110 @@ function FormulaCard({
   item,
   onEdit,
   onDelete,
+  filing,
 }: {
   item: Item;
   onEdit: () => void;
   onDelete: () => void;
+  filing: Filing;
 }) {
+  const [filingOpen, setFilingOpen] = useState(false);
   const cmd = item.cmd ?? "";
   // A title left blank defaults to the command's first line; printing it in
   // the title bar too would show the command twice.
   const defaulted = item.title === titleOr("", null, cmd);
 
   return (
-    <li className="row group term border-term-border overflow-hidden rounded-lg border">
-      {/* The title takes the bar; on a phone Edit/Delete wrap beneath it
+    <li className="row group">
+      {/* The console card; its Collections list opens below it, in page
+          colours, so the pinned console never holds a page field. */}
+      <div className="term border-term-border overflow-hidden rounded-lg border">
+        {/* The title takes the bar; on a phone Edit/Delete wrap beneath it
           rather than squeezing it into a column of three-word lines. */}
-      <div className="bg-term-surface flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-        <span aria-hidden="true" className="flex shrink-0 gap-1.5">
-          <span className="bg-term-border size-2.5 rounded-full" />
-          <span className="bg-term-border size-2.5 rounded-full" />
-          <span className="bg-term-border size-2.5 rounded-full" />
-        </span>
-        <h3
-          lang={langOf(item.title)}
-          className={
-            defaulted
-              ? "sr-only"
-              : "text-label text-term-muted min-w-0 flex-[1_1_10rem] font-mono break-words"
-          }
-        >
-          {item.title}
-        </h3>
-        <div className="row-actions ml-auto flex shrink-0 gap-1 transition-opacity duration-150">
-          <button
-            type="button"
-            onClick={onEdit}
-            aria-label={`Edit ${item.title}`}
-            className={`text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            aria-label={`Delete ${item.title}`}
-            className={`text-label text-term-muted hover:text-term-danger focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-term-bg px-3 py-3">
-        <div className="flex items-start gap-3">
-          <span
-            aria-hidden="true"
-            className="text-term-accent shrink-0 font-mono leading-relaxed select-none"
-          >
-            ❯
+        <div className="bg-term-surface flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+          <span aria-hidden="true" className="flex shrink-0 gap-1.5">
+            <span className="bg-term-border size-2.5 rounded-full" />
+            <span className="bg-term-border size-2.5 rounded-full" />
+            <span className="bg-term-border size-2.5 rounded-full" />
           </span>
-          {/* Never wraps; scroll-fade dims the edge that has more to scroll. */}
-          <code className="text-body text-term-ink scroll-fade min-w-0 flex-1 overflow-x-auto font-mono leading-relaxed whitespace-pre">
-            {cmd}
-          </code>
-          <CopyButton
-            text={cmd}
-            className={`text-label focus-visible:outline-term-accent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
-          />
+          <h3
+            lang={langOf(item.title)}
+            className={
+              defaulted
+                ? "sr-only"
+                : "text-label text-term-muted min-w-0 flex-[1_1_10rem] font-mono break-words"
+            }
+          >
+            {item.title}
+          </h3>
+          <div className="row-actions ml-auto flex shrink-0 gap-1 transition-opacity duration-150">
+            <CollectionsButton
+              item={item}
+              filing={filing}
+              open={filingOpen}
+              onClick={() => setFilingOpen(!filingOpen)}
+              className={`text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
+            />
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label={`Edit ${item.title}`}
+              className={`text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label={`Delete ${item.title}`}
+              className={`text-label text-term-muted hover:text-term-danger focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
+            >
+              Delete
+            </button>
+          </div>
         </div>
 
-        {item.description && (
-          <p
-            lang={langOf(item.description)}
-            className="text-label text-term-muted mt-2 pl-6 font-mono"
-          >
-            # {item.description}
-          </p>
-        )}
+        <div className="bg-term-bg px-3 py-3">
+          <div className="flex items-start gap-3">
+            <span
+              aria-hidden="true"
+              className="text-term-accent shrink-0 font-mono leading-relaxed select-none"
+            >
+              ❯
+            </span>
+            {/* Never wraps; scroll-fade dims the edge that has more to scroll. */}
+            <code className="text-body text-term-ink scroll-fade min-w-0 flex-1 overflow-x-auto font-mono leading-relaxed whitespace-pre">
+              {cmd}
+            </code>
+            <CopyButton
+              text={cmd}
+              className={`text-label focus-visible:outline-term-accent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
+            />
+          </div>
 
-        {item.tags.length > 0 && (
-          <ul className="text-label text-term-muted mt-2 flex flex-wrap gap-x-3 pl-6 font-mono">
-            {item.tags.map((tag) => (
-              <li key={tag} lang={langOf(tag)}>
-                #{tag}
-              </li>
-            ))}
-          </ul>
-        )}
+          {item.description && (
+            <p
+              lang={langOf(item.description)}
+              className="text-label text-term-muted mt-2 pl-6 font-mono"
+            >
+              # {item.description}
+            </p>
+          )}
+
+          {item.tags.length > 0 && (
+            <ul className="text-label text-term-muted mt-2 flex flex-wrap gap-x-3 pl-6 font-mono">
+              {item.tags.map((tag) => (
+                <li key={tag} lang={langOf(tag)}>
+                  #{tag}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
+      {filingOpen && (
+        <CollectionsPanel item={item} filing={filing} className="mt-2 px-1" />
+      )}
     </li>
   );
 }
