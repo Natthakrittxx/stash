@@ -299,6 +299,16 @@ describe("a fresh instance", () => {
     expect((await get("/invites", member)).status).toBe(404);
   });
 
+  test("fonts are served by the instance itself", async () => {
+    const html = await (await get("/login")).text();
+    const fonts = [...html.matchAll(/\/_next\/static\/media\/[^"]+\.woff2/g)].map((m) => m[0]);
+    expect(fonts.length).toBeGreaterThan(0);
+    expect(html).not.toContain("fonts.googleapis.com");
+    const res = await get(fonts[0]!);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("font/woff2");
+  });
+
   test("pages render, despite the build having no secret to prerender with", async () => {
     for (const path of ["/", "/login", "/signup"]) {
       expect([path, (await get(path)).status]).toEqual([path, 200]);

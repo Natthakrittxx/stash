@@ -98,4 +98,4 @@ Issues and pull requests are welcome, on a best-effort basis: this is a small pe
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The fonts in `src/fonts` keep their own SIL Open Font License, included beside them.
