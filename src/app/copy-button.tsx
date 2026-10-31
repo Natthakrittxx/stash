@@ -12,10 +12,12 @@ export function CopyButton({
   text,
   className,
   label = "Copy command",
+  word = "Copy",
 }: {
   text: string;
   className: string;
   label?: string;
+  word?: string;
 }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
@@ -50,7 +52,7 @@ export function CopyButton({
           ? "✓ Copied"
           : state === "failed"
             ? "✕ Failed"
-            : "Copy"}
+            : word}
       </button>
       {/* The label stays short (no 8000-char command read aloud); this live
             region is what tells a screen reader the copy happened. */}

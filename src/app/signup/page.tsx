@@ -10,11 +10,17 @@ export const metadata: Metadata = { title: "Sign up" };
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; invite?: string | string[] }>;
 }) {
   if (await getSession()) redirect("/stash");
-  const { error } = await searchParams;
+  const { error, invite } = await searchParams;
   return (
-    <AuthForm mode="signup" google={!!env.GOOGLE_CLIENT_ID} oauthError={error} />
+    <AuthForm
+      mode="signup"
+      google={!!env.GOOGLE_CLIENT_ID}
+      oauthError={error}
+      // A repeated ?invite= arrives as an array.
+      initialInvite={typeof invite === "string" ? invite : undefined}
+    />
   );
 }
