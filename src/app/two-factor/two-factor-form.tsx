@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { StashMark } from "~/app/stash-mark";
-import { fieldFocus, focusRing, touch } from "~/app/stash/ui";
+import { field, focusRing, touch } from "~/app/stash/ui";
 import { ThemeToggle } from "~/app/theme-toggle";
 import { authClient } from "~/server/better-auth/client";
 
@@ -34,8 +34,19 @@ export function TwoFactorForm() {
   const [failure, setFailure] = useState<Failure | null>(null);
   const [pending, setPending] = useState(false);
 
+  const input = useRef<HTMLInputElement>(null);
+
+  // A failure names the only field here, so it takes focus. The typed code stays.
+  useEffect(() => {
+    if (failure) input.current?.focus();
+  }, [failure]);
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!code.trim()) {
+      setFailure({ message: "Enter the code." });
+      return;
+    }
     setFailure(null);
     setPending(true);
     const { error } = backup
@@ -43,7 +54,6 @@ export function TwoFactorForm() {
       : await authClient.twoFactor.verifyTotp({ code: code.trim() });
     if (error) {
       setPending(false);
-      setCode("");
       setFailure(explain(error.code));
       return;
     }
@@ -72,44 +82,54 @@ export function TwoFactorForm() {
           : "It's in your authenticator app."}
       </p>
 
-      {failure && (
-        <p role="alert" className="text-label text-danger mt-6">
-          <span aria-hidden="true">✕ </span>
-          {failure.message}
-          {failure.restart && (
-            <>
-              {" "}
-              <Link
-                href="/login"
-                className={`text-accent rounded underline underline-offset-2 ${focusRing}`}
-              >
-                Log in again
-              </Link>
-            </>
+      <form noValidate onSubmit={onSubmit} className="mt-8 flex flex-col gap-3">
+        <div>
+          <label className="text-label text-muted flex flex-col gap-1">
+            {backup ? "Backup code" : "Code"}
+            <input
+              ref={input}
+              name="code"
+              autoFocus
+              spellCheck={false}
+              autoComplete={backup ? "off" : "one-time-code"}
+              inputMode={backup ? "text" : "numeric"}
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value);
+                setFailure(null);
+              }}
+              aria-invalid={!!failure || undefined}
+              aria-describedby={failure ? "code-failure" : undefined}
+              className={`${field} font-mono`}
+            />
+          </label>
+          {failure && (
+            <p
+              id="code-failure"
+              role="alert"
+              className="text-label text-danger mt-1"
+            >
+              <span aria-hidden="true">✕ </span>
+              {failure.message}
+              {failure.restart && (
+                <>
+                  {" "}
+                  <Link
+                    href="/login"
+                    className={`text-accent inline-flex items-center rounded underline underline-offset-2 ${touch} ${focusRing}`}
+                  >
+                    Log in again
+                  </Link>
+                </>
+              )}
+            </p>
           )}
-        </p>
-      )}
-      <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-3">
-        <label className="text-label text-muted flex flex-col gap-1">
-          {backup ? "Backup code" : "Code"}
-          <input
-            name="code"
-            required
-            autoFocus
-            spellCheck={false}
-            autoComplete={backup ? "off" : "one-time-code"}
-            inputMode={backup ? "text" : "numeric"}
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-            aria-invalid={!!failure || undefined}
-            className={`border-field bg-bg text-body text-ink rounded border px-3 py-2 font-mono transition-colors duration-150 ${fieldFocus}`}
-          />
-        </label>
+        </div>
         <button
           type="submit"
           disabled={pending}
           aria-busy={pending}
-          className={`bg-accent text-body text-bg rounded px-4 py-2 font-medium transition-opacity duration-150 hover:opacity-90 disabled:pointer-events-none disabled:opacity-60 ${focusRing}`}
+          className={`bg-accent text-body text-bg rounded px-4 py-2 font-medium transition-opacity duration-150 hover:opacity-90 disabled:pointer-events-none disabled:opacity-60 ${touch} ${focusRing}`}
         >
           {pending ? "One moment…" : "Continue"}
         </button>

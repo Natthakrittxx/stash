@@ -8,7 +8,7 @@ import { authClient } from "~/server/better-auth/client";
 
 import { StashMark } from "./stash-mark";
 import { ThemeToggle } from "./theme-toggle";
-import { fieldFocus } from "./stash/ui";
+import { fieldFocus, touch } from "./stash/ui";
 
 // A name is required at signup; derive it from the email so the form stays to
 // two fields. Editable later if display names ever matter.
@@ -82,13 +82,13 @@ export function AuthForm({
 
   // Set after mount: the server can't know, and browsers don't offer passkeys on
   // plain-HTTP addresses other than localhost.
-  const [passkeys, setPasskeys] = useState(false);
+  const [passkeysSupported, setPasskeysSupported] = useState(false);
 
   const isSignup = mode === "signup";
 
   useEffect(() => {
     if (isSignup || !window.PublicKeyCredential) return;
-    setPasskeys(true);
+    setPasskeysSupported(true);
     // Autofill offers saved passkeys on the fields below and waits for a pick.
     void PublicKeyCredential.isConditionalMediationAvailable?.().then(
       async (available) => {
@@ -292,7 +292,7 @@ export function AuthForm({
         </Link>
       </p>
 
-      {(google || passkeys) && (
+      {(google || passkeysSupported) && (
         <div className="text-label text-muted mt-6 flex items-center gap-3">
           <span className="bg-border h-px flex-1" />
           or
@@ -300,13 +300,13 @@ export function AuthForm({
         </div>
       )}
 
-      {passkeys && (
+      {passkeysSupported && (
         <button
           type="button"
           onClick={onPasskey}
           disabled={pending}
           aria-busy={pending}
-          className="border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent mt-6 flex items-center justify-center gap-2 rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60"
+          className={`border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent mt-6 flex items-center justify-center gap-2 rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60 ${touch}`}
         >
           {pending ? "One moment…" : "Log in with a passkey"}
         </button>
@@ -319,7 +319,7 @@ export function AuthForm({
             onClick={onGoogle}
             disabled={pending}
             aria-busy={pending}
-            className={`border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent ${passkeys ? "mt-3" : "mt-6"} flex items-center justify-center gap-2 rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60`}
+            className={`border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent ${passkeysSupported ? "mt-3" : "mt-6"} flex items-center justify-center gap-2 rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60`}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5">
               <path

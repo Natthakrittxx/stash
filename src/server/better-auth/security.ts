@@ -7,7 +7,6 @@ import {
 import { twoFactor } from "better-auth/plugins/two-factor";
 
 // How long after signing in someone counts as having just proven who they are.
-// Also the `session.freshAge` that guards adding a passkey.
 export const RECENT_SIGN_IN_SECONDS = 10 * 60;
 
 export const secondFactor = twoFactor({
@@ -33,6 +32,12 @@ const SECOND_FACTOR_CHANGES = [
   "/two-factor/get-totp-uri",
 ];
 
+const PASSKEY_CHANGES = [
+  "/passkey/generate-register-options",
+  "/passkey/verify-registration",
+  "/passkey/delete-passkey",
+];
+
 // The plugin's own challenge only covers password sign-in. These are the other
 // ways a person arrives through Google: the redirect, and a direct ID token.
 const GOOGLE_CALLBACK = "/callback/:id";
@@ -41,14 +46,27 @@ const GOOGLE_ID_TOKEN = "/sign-in/social";
 type Middleware = Parameters<typeof createAuthMiddleware>[0];
 type AuthContext = Parameters<Middleware>[0];
 
-async function requireRecentSignIn(
-  ctx: AuthContext,
-  when: (userId: string) => Promise<boolean> | boolean = () => true,
-) {
-  const session = await getSessionFromCtx(ctx);
-  // No session: the endpoint's own check answers it.
-  if (!session || !(await when(session.user.id))) return;
-  const age = Date.now() - new Date(session.session.createdAt).getTime();
+type LiveSession = {
+  session: { createdAt: Date | string };
+  user: { id: string; twoFactorEnabled?: boolean | null };
+};
+
+// From the database, not the signed cookie cache, where a revoked session stays
+// valid for 5 minutes. Long enough for an intruder who was just signed out to add
+// a passkey and keep their way in.
+async function liveSession(ctx: AuthContext) {
+  const session = await getSessionFromCtx(ctx, { disableCookieCache: true });
+  if (!session) {
+    throw new APIError("UNAUTHORIZED", {
+      code: "UNAUTHORIZED",
+      message: "unauthorized",
+    });
+  }
+  return session as LiveSession;
+}
+
+function requireRecentSignIn({ session }: LiveSession) {
+  const age = Date.now() - new Date(session.createdAt).getTime();
   if (age >= RECENT_SIGN_IN_SECONDS * 1000) {
     throw new APIError("FORBIDDEN", {
       code: "SESSION_NOT_FRESH",
@@ -112,13 +130,34 @@ async function signOutOtherBrowsers(ctx: AuthContext) {
 export const securityHooks = {
   before: createAuthMiddleware(async (ctx) => {
     if (SECOND_FACTOR_CHANGES.includes(ctx.path)) {
-      await requireRecentSignIn(ctx, async (userId) => {
-        const accounts = await ctx.context.internalAdapter.findAccounts(userId);
-        return !accounts.some((a) => a.providerId === "credential");
+      const session = await liveSession(ctx);
+      // The plugin would replace the secret at once, with no code to confirm it,
+      // so a stale tab could leave someone locked out.
+      if (ctx.path === "/two-factor/enable" && session.user.twoFactorEnabled) {
+        throw new APIError("BAD_REQUEST", {
+          code: "SECOND_FACTOR_ALREADY_ON",
+          message: "second_factor_already_on",
+        });
+      }
+      const accounts = await ctx.context.internalAdapter.findAccounts(
+        session.user.id,
+      );
+      // With a password, the plugin confirms it instead.
+      if (!accounts.some((a) => a.providerId === "credential")) {
+        requireRecentSignIn(session);
+      }
+    }
+    if (PASSKEY_CHANGES.includes(ctx.path)) {
+      requireRecentSignIn(await liveSession(ctx));
+    }
+    // Nothing in the app unlinks an account, and removing the password would turn
+    // "confirm your password" into "signed in recently".
+    if (ctx.path === "/unlink-account") {
+      throw new APIError("FORBIDDEN", {
+        code: "UNLINKING_NOT_SUPPORTED",
+        message: "unlinking_not_supported",
       });
     }
-    // Adding a passkey needs a fresh session too, through freshAge.
-    if (ctx.path === "/passkey/delete-passkey") await requireRecentSignIn(ctx);
     if (ctx.path === "/passkey/verify-authentication") {
       requireUserVerification(ctx);
     }

@@ -1,33 +1,40 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { type InputHTMLAttributes, useEffect, useRef, useState } from "react";
 import { encode } from "uqr";
 
 import { CopyButton } from "~/app/copy-button";
-import { fieldFocus, focusRing, touch } from "~/app/stash/ui";
+import { field, focusRing, quietButton, touch } from "~/app/stash/ui";
 import { authClient } from "~/server/better-auth/client";
 
 const primary = `bg-accent text-body text-bg inline-flex items-center justify-center rounded px-4 py-2 font-medium transition-opacity duration-150 hover:opacity-90 disabled:pointer-events-none disabled:opacity-60 ${touch} ${focusRing}`;
 const secondary = `border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface inline-flex items-center justify-center rounded border px-4 py-2 transition-colors duration-150 disabled:pointer-events-none disabled:opacity-60 ${touch} ${focusRing}`;
-const field = `border-field bg-bg text-body text-ink rounded border px-3 py-2 transition-colors duration-150 ${fieldFocus}`;
 const copyAction = `text-label focus-visible:outline-term-accent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`;
 
-type Failure = { message: string; signInAgain?: true };
+type Failure = {
+  message: string;
+  // Which field it names. Without one it goes at the end of its section.
+  field?: "password" | "code";
+  logInAgain?: true;
+};
 
 function explain(code?: string): Failure {
   switch (code) {
     case "SESSION_NOT_FRESH":
       return {
-        message: "For safety, this needs a sign-in from the last 10 minutes.",
-        signInAgain: true,
+        message: "For safety, this needs a login from the last 10 minutes.",
+        logInAgain: true,
       };
     case "INVALID_PASSWORD":
-      return { message: "That password isn't right." };
+      return { message: "That password isn't right.", field: "password" };
     case "INVALID_CODE":
       return {
         message: "That code didn't work. Check your app and try again.",
+        field: "code",
       };
+    case "SECOND_FACTOR_ALREADY_ON":
+      return { message: "It's already on. Reload this page to see it." };
     case "PREVIOUSLY_REGISTERED":
     case "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED":
       return { message: "This device already has a passkey here." };
@@ -64,16 +71,15 @@ function useAction() {
     return data ?? null;
   }
 
-  return { failure, pending, run };
+  return { failure, setFailure, pending, run };
 }
 
-function FailureNote({ failure }: { failure: Failure | null }) {
-  if (!failure) return null;
+function FailureNote({ failure, id }: { failure: Failure; id?: string }) {
   return (
-    <p role="alert" className="text-label text-danger mt-4">
+    <p id={id} role="alert" className="text-label text-danger mt-1">
       <span aria-hidden="true">✕ </span>
       {failure.message}
-      {failure.signInAgain && (
+      {failure.logInAgain && (
         <>
           {" "}
           <button
@@ -82,13 +88,53 @@ function FailureNote({ failure }: { failure: Failure | null }) {
               await authClient.signOut();
               window.location.assign("/login");
             }}
-            className={`text-accent rounded underline underline-offset-2 ${focusRing}`}
+            className={`text-accent inline-flex items-center rounded underline underline-offset-2 ${touch} ${focusRing}`}
           >
-            Sign in again
+            Log in again
           </button>
         </>
       )}
     </p>
+  );
+}
+
+// A failure that names this field shows under it and takes focus. Typing clears it.
+function CheckedField({
+  label,
+  name,
+  failure,
+  onType,
+  className = "",
+  ...input
+}: {
+  label: string;
+  name: "password" | "code";
+  failure: Failure | null;
+  onType: (value: string) => void;
+} & InputHTMLAttributes<HTMLInputElement>) {
+  const ref = useRef<HTMLInputElement>(null);
+  const failed = failure?.field === name;
+
+  useEffect(() => {
+    if (failed) ref.current?.focus();
+  }, [failure, failed]);
+
+  return (
+    <div className="mt-4 max-w-xs">
+      <label className="text-label text-muted flex flex-col gap-1">
+        {label}
+        <input
+          {...input}
+          ref={ref}
+          name={name}
+          onChange={(event) => onType(event.target.value)}
+          aria-invalid={failed || undefined}
+          aria-describedby={failed ? `${name}-failure` : undefined}
+          className={`${field} ${className}`}
+        />
+      </label>
+      {failed && <FailureNote failure={failure} id={`${name}-failure`} />}
+    </div>
   );
 }
 
@@ -110,28 +156,6 @@ function QrCode({ text }: { text: string }) {
   );
 }
 
-function PasswordField({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="text-label text-muted mt-4 flex max-w-xs flex-col gap-1">
-      Your password
-      <input
-        type="password"
-        required
-        autoComplete="current-password"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className={field}
-      />
-    </label>
-  );
-}
-
 function BackupCodes({
   codes,
   onDone,
@@ -139,8 +163,12 @@ function BackupCodes({
   codes: string[];
   onDone: () => void;
 }) {
+  // The step replaces the button that was just pressed, so focus would be lost.
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => ref.current?.focus(), []);
+
   return (
-    <>
+    <div ref={ref} tabIndex={-1} className="outline-hidden">
       <p className="text-body text-muted mt-1">
         Save these somewhere safe. Each one gets you in once if you lose your
         phone, and you won&apos;t see them again.
@@ -160,11 +188,11 @@ function BackupCodes({
       <button type="button" onClick={onDone} className={`${primary} mt-4`}>
         I&apos;ve saved them
       </button>
-    </>
+    </div>
   );
 }
 
-function SecondFactorSection({
+export function SecondFactorSection({
   enabled,
   hasPassword,
 }: {
@@ -172,7 +200,7 @@ function SecondFactorSection({
   hasPassword: boolean;
 }) {
   const router = useRouter();
-  const { failure, pending, run } = useAction();
+  const { failure, setFailure, pending, run } = useAction();
   const [password, setPassword] = useState("");
   const [setup, setSetup] = useState<{
     uri: string;
@@ -183,8 +211,30 @@ function SecondFactorSection({
 
   const proof = hasPassword ? { password } : {};
 
+  function passwordMissing() {
+    if (!hasPassword || password) return false;
+    setFailure({ message: "Enter your password.", field: "password" });
+    return true;
+  }
+
+  const passwordField = hasPassword && (
+    <CheckedField
+      label="Your password"
+      name="password"
+      type="password"
+      autoComplete="current-password"
+      value={password}
+      failure={failure}
+      onType={(value) => {
+        setPassword(value);
+        setFailure(null);
+      }}
+    />
+  );
+
   async function start(event: React.FormEvent) {
     event.preventDefault();
+    if (passwordMissing()) return;
     const data = await run(() =>
       authClient.twoFactor.enable(proof as { password: string }),
     );
@@ -196,7 +246,13 @@ function SecondFactorSection({
 
   async function confirm(event: React.FormEvent) {
     event.preventDefault();
-    const data = await run(() => authClient.twoFactor.verifyTotp({ code }));
+    if (!code.trim()) {
+      setFailure({ message: "Enter the code from your app.", field: "code" });
+      return;
+    }
+    const data = await run(() =>
+      authClient.twoFactor.verifyTotp({ code: code.trim() }),
+    );
     if (data && setup) {
       setCode("");
       setNewCodes(setup.backupCodes);
@@ -206,6 +262,7 @@ function SecondFactorSection({
   }
 
   async function regenerate() {
+    if (passwordMissing()) return;
     const data = await run(() =>
       authClient.twoFactor.generateBackupCodes(proof as { password: string }),
     );
@@ -216,6 +273,7 @@ function SecondFactorSection({
   }
 
   async function turnOff() {
+    if (passwordMissing()) return;
     const data = await run(() =>
       authClient.twoFactor.disable(proof as { password: string }),
     );
@@ -245,26 +303,38 @@ function SecondFactorSection({
           </code>
           <CopyButton text={key} label="Copy key" className={copyAction} />
         </div>
-        <form onSubmit={confirm}>
-          <label className="text-label text-muted mt-4 flex max-w-xs flex-col gap-1">
-            Code
-            <input
-              required
-              autoComplete="one-time-code"
-              inputMode="numeric"
-              spellCheck={false}
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              className={`${field} font-mono`}
-            />
-          </label>
+        <form noValidate onSubmit={confirm}>
+          <CheckedField
+            label="Code"
+            name="code"
+            autoFocus
+            autoComplete="one-time-code"
+            inputMode="numeric"
+            spellCheck={false}
+            value={code}
+            failure={failure}
+            onType={(value) => {
+              setCode(value);
+              setFailure(null);
+            }}
+            className="font-mono"
+          />
           <div className="mt-4 flex flex-wrap gap-2">
-            <button type="submit" disabled={pending} className={primary}>
+            <button
+              type="submit"
+              disabled={pending}
+              aria-busy={pending}
+              className={primary}
+            >
               {pending ? "One moment…" : "Turn on"}
             </button>
             <button
               type="button"
-              onClick={() => setSetup(null)}
+              onClick={() => {
+                setSetup(null);
+                setCode("");
+                setFailure(null);
+              }}
               className={secondary}
             >
               Cancel
@@ -277,16 +347,14 @@ function SecondFactorSection({
     body = (
       <>
         <p className="text-body text-muted mt-1">
-          On. You&apos;re asked for a code after signing in with a password or
+          On. You&apos;re asked for a code after logging in with a password or
           Google.
         </p>
-        {hasPassword && (
-          <PasswordField value={password} onChange={setPassword} />
-        )}
+        {passwordField}
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={pending || (hasPassword && !password)}
+            disabled={pending}
             onClick={regenerate}
             className={secondary}
           >
@@ -294,7 +362,7 @@ function SecondFactorSection({
           </button>
           <button
             type="button"
-            disabled={pending || (hasPassword && !password)}
+            disabled={pending}
             onClick={turnOff}
             className={secondary}
           >
@@ -305,15 +373,18 @@ function SecondFactorSection({
     );
   } else {
     body = (
-      <form onSubmit={start}>
+      <form noValidate onSubmit={start}>
         <p className="text-body text-muted mt-1">
           Ask for a code from an app like 1Password or Google Authenticator
-          after signing in with a password or Google.
+          after logging in with a password or Google.
         </p>
-        {hasPassword && (
-          <PasswordField value={password} onChange={setPassword} />
-        )}
-        <button type="submit" disabled={pending} className={`${primary} mt-4`}>
+        {passwordField}
+        <button
+          type="submit"
+          disabled={pending}
+          aria-busy={pending}
+          className={`${primary} mt-4`}
+        >
           {pending ? "One moment…" : "Set up"}
         </button>
       </form>
@@ -326,12 +397,12 @@ function SecondFactorSection({
         Authenticator app
       </h2>
       {body}
-      <FailureNote failure={failure} />
+      {failure && !failure.field && <FailureNote failure={failure} />}
     </section>
   );
 }
 
-function PasskeysSection({
+export function PasskeysSection({
   passkeys,
 }: {
   passkeys: { id: string; name: string | null; createdAt: Date | null }[];
@@ -372,12 +443,9 @@ function PasskeysSection({
       </p>
 
       {passkeys.length > 0 && (
-        <ul className="mt-4 flex flex-col gap-2">
+        <ul className="divide-border border-border mt-4 divide-y border-y">
           {passkeys.map(({ id, name, createdAt }) => (
-            <li
-              key={id}
-              className="border-border flex items-center gap-3 rounded border px-3 py-2"
-            >
+            <li key={id} className="flex items-center gap-3 py-4">
               <span className="min-w-0 flex-1">
                 <span className="text-body text-ink block truncate">
                   {name ?? "Passkey"}
@@ -397,7 +465,7 @@ function PasskeysSection({
                 disabled={pending}
                 onClick={() => remove(id)}
                 aria-label={`Remove passkey ${name ?? ""}`.trim()}
-                className={`text-label text-muted hover:text-ink inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-medium ${touch} ${focusRing}`}
+                className={`${quietButton} hover:text-danger shrink-0`}
               >
                 Remove
               </button>
@@ -412,8 +480,12 @@ function PasskeysSection({
         </p>
       )}
       {supported && (
-        <form onSubmit={add} className="mt-4 flex flex-wrap items-end gap-2">
-          <label className="text-label text-muted flex flex-col gap-1">
+        <form
+          noValidate
+          onSubmit={add}
+          className="mt-4 flex flex-wrap items-end gap-2"
+        >
+          <label className="text-label text-muted flex min-w-48 flex-1 flex-col gap-1">
             Name (optional)
             <input
               value={name}
@@ -423,32 +495,17 @@ function PasskeysSection({
               className={field}
             />
           </label>
-          <button type="submit" disabled={pending} className={secondary}>
+          <button
+            type="submit"
+            disabled={pending}
+            aria-busy={pending}
+            className={secondary}
+          >
             {pending ? "One moment…" : "Add a passkey"}
           </button>
         </form>
       )}
-      <FailureNote failure={failure} />
+      {failure && <FailureNote failure={failure} />}
     </section>
-  );
-}
-
-export function SecuritySettings({
-  twoFactorEnabled,
-  hasPassword,
-  passkeys,
-}: {
-  twoFactorEnabled: boolean;
-  hasPassword: boolean;
-  passkeys: { id: string; name: string | null; createdAt: Date | null }[];
-}) {
-  return (
-    <>
-      <SecondFactorSection
-        enabled={twoFactorEnabled}
-        hasPassword={hasPassword}
-      />
-      <PasskeysSection passkeys={passkeys} />
-    </>
   );
 }

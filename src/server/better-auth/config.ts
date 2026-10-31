@@ -10,12 +10,7 @@ import { INVITE_COOKIE } from "~/invite";
 import { db } from "~/server/db";
 import { inviteCodes } from "~/server/db/schema";
 
-import {
-  RECENT_SIGN_IN_SECONDS,
-  securityHooks,
-  securityPasskey,
-  secondFactor,
-} from "./security";
+import { securityHooks, securityPasskey, secondFactor } from "./security";
 
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
@@ -64,10 +59,7 @@ export const auth = betterAuth({
   // Every page load and server action reads the session. A short signed cookie
   // cache answers that without a DB round trip; a revoked session can outlive
   // its revocation by up to this maxAge. Sign out clears the cookie at once.
-  session: {
-    cookieCache: { enabled: true, maxAge: 5 * 60 },
-    freshAge: RECENT_SIGN_IN_SECONDS,
-  },
+  session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
   plugins: [secondFactor, securityPasskey(env.BETTER_AUTH_URL)],
   hooks: securityHooks,
   socialProviders:

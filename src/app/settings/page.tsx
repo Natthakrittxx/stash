@@ -7,7 +7,7 @@ import { getSession } from "~/server/better-auth/server";
 import { db } from "~/server/db";
 import { account, passkey, user } from "~/server/db/schema";
 
-import { SecuritySettings } from "./security-settings";
+import { PasskeysSection, SecondFactorSection } from "./security-settings";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -17,7 +17,7 @@ export default async function SettingsPage() {
   const userId = session.user.id;
 
   // From the database, not the session: its cookie cache can be 5 minutes behind.
-  const [[row], [password], passkeys] = await Promise.all([
+  const [[row], [credential], passkeys] = await Promise.all([
     db
       .select({ twoFactorEnabled: user.twoFactorEnabled })
       .from(user)
@@ -43,11 +43,11 @@ export default async function SettingsPage() {
     <main className="mx-auto flex min-h-dvh max-w-xl flex-col px-6 py-12">
       <SubPageHeader />
       <h1 className="text-headline text-ink mt-2 font-serif">Settings</h1>
-      <SecuritySettings
-        twoFactorEnabled={!!row?.twoFactorEnabled}
-        hasPassword={!!password}
-        passkeys={passkeys}
+      <SecondFactorSection
+        enabled={!!row?.twoFactorEnabled}
+        hasPassword={!!credential}
       />
+      <PasskeysSection passkeys={passkeys} />
     </main>
   );
 }

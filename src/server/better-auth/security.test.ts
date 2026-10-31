@@ -60,7 +60,8 @@ function instance() {
     secret: "a-test-secret-that-is-long-enough-to-pass",
     database: memoryAdapter(db),
     emailAndPassword: { enabled: true },
-    session: { freshAge: RECENT_SIGN_IN_SECONDS },
+    // As in config.ts: a revoked session stays valid in this cache for 5 minutes.
+    session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
     logger: { disabled: true },
     socialProviders: {
       google: {
@@ -273,6 +274,73 @@ test("turning on a second factor signs out other browsers, and keeps this one", 
   expect(here.signedIn).toBe(true);
   expect(db.session!.length).toBe(1);
   expect(here.cookie).toContain(String(db.session![0]!.token));
+});
+
+test("a browser that was signed out can't add a passkey from its cached session", async () => {
+  const { Browser, signUp, turnOn } = instance();
+  const here = await signUp("on@example.com");
+  const intruder = new Browser();
+  await intruder.post("/sign-in/email", {
+    email: "on@example.com",
+    password: "correct-horse",
+  });
+  await turnOn(here, "correct-horse");
+
+  const added = await intruder.post("/passkey/verify-registration", {
+    response: {},
+  });
+  expect(added.status).toBe(401);
+  const changed = await intruder.post("/two-factor/generate-backup-codes", {
+    password: "correct-horse",
+  });
+  expect(changed.status).toBe(401);
+});
+
+test("a second factor that's on can't be replaced by setting it up again", async () => {
+  const { Browser, signUp, turnOn, code } = instance();
+  const here = await signUp("on@example.com");
+  const { secret } = await turnOn(here, "correct-horse");
+
+  const again = await here.post("/two-factor/enable", {
+    password: "correct-horse",
+  });
+  expect(again.status).toBe(400);
+  expect(((await again.json()) as { code: string }).code).toBe(
+    "SECOND_FACTOR_ALREADY_ON",
+  );
+
+  const browser = new Browser();
+  await browser.post("/sign-in/email", {
+    email: "on@example.com",
+    password: "correct-horse",
+  });
+  const res = await browser.post("/two-factor/verify-totp", {
+    code: await code(secret),
+  });
+  expect(res.status).toBe(200);
+});
+
+test("a password can't be unlinked to skip confirming it", async () => {
+  const { db, signUp, turnOn } = instance();
+  const browser = await signUp("on@example.com");
+  await turnOn(browser, "correct-horse");
+  const now = new Date();
+  db.account!.push({
+    id: "g",
+    userId: db.user![0]!.id,
+    providerId: "google",
+    accountId: "g1",
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const unlinked = await browser.post("/unlink-account", {
+    providerId: "credential",
+  });
+  expect(unlinked.status).toBe(403);
+  expect(db.account!.length).toBe(2);
+  const off = await browser.post("/two-factor/disable", {});
+  expect(off.status).toBe(400);
 });
 
 test("giving a code at sign-in doesn't sign out other browsers", async () => {

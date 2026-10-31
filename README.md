@@ -79,7 +79,7 @@ People can turn on an authenticator app and passkeys under **Settings**. If some
 docker compose exec app node reset-second-factor.mjs someone@example.com
 ```
 
-It ends that account's existing sessions, and they can sign in without a code until they set it up again. It doesn't change their password or passkeys.
+It ends that account's existing sessions, and they can sign in without a code until they set it up again. An open browser tab can stay signed in for up to 5 more minutes. It doesn't change their password or passkeys.
 
 Authenticator secrets are encrypted with the instance's auth secret. If you lose or replace that secret, everyone with an authenticator app turned on is locked out until you run this command for them.
 
