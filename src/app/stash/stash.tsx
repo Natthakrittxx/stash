@@ -991,6 +991,12 @@ export function Stash({
               Invites
             </Link>
           )}
+          <Link
+            href="/settings"
+            className={`text-label text-muted hover:text-ink inline-flex h-9 shrink-0 items-center rounded px-1 font-medium ${touch} ${focusRing}`}
+          >
+            Settings
+          </Link>
           <button
             type="button"
             disabled={signingOut}

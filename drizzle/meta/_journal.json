@@ -36,6 +36,13 @@
       "when": 1793367160387,
       "tag": "0004_instance_owner_and_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793457784767,
+      "tag": "0005_second_factor_and_passkeys",
+      "breakpoints": true
     }
   ]
 }

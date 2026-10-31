@@ -71,6 +71,20 @@ docker compose exec app node reset-password.mjs someone@example.com
 
 It prints a new password to pass on, and ends that account's existing sessions. An open browser tab can stay signed in for up to 5 more minutes. This also gives an account that only used Google a password login.
 
+## Lost authenticators
+
+People can turn on an authenticator app and passkeys under **Settings**. If someone loses both their authenticator and their backup codes, clear their second factor:
+
+```sh
+docker compose exec app node reset-second-factor.mjs someone@example.com
+```
+
+It ends that account's existing sessions, and they can sign in without a code until they set it up again. It doesn't change their password or passkeys.
+
+Authenticator secrets are encrypted with the instance's auth secret. If you lose or replace that secret, everyone with an authenticator app turned on is locked out until you run this command for them.
+
+Passkeys are tied to the instance's domain and only work over HTTPS or on `localhost`. If `BETTER_AUTH_URL` moves to another domain, expect people to need new passkeys. Passwords and Google login still work.
+
 ## What leaves your instance
 
 - **Map views:** browsers fetch map tiles from [OpenFreeMap](https://openfreemap.org), which sees the area being viewed. Saved places themselves aren't sent.

@@ -9,4 +9,4 @@ Operators set everything inline in `compose.yml`, and the project has no `.env` 
 
 ## Consequences
 
-Losing the secret volume logs everyone out but loses no saved data. The Postgres password is a fixed inline value, which is safe only because the bundled `db` service publishes no port; do not publish it without changing the password. An operator on their own database sets `DATABASE_URL` in `compose.yml` and that URL's credentials then live in that file, so that copy must stay private.
+Losing the secret volume logs everyone out but loses no saved data. Since second factors were added it also locks out anyone with an authenticator app turned on, because their secrets are encrypted with it, until the operator runs `reset-second-factor.mjs` for them. The Postgres password is a fixed inline value, which is safe only because the bundled `db` service publishes no port; do not publish it without changing the password. An operator on their own database sets `DATABASE_URL` in `compose.yml` and that URL's credentials then live in that file, so that copy must stay private.

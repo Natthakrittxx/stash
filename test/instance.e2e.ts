@@ -10,6 +10,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
+import { base32 } from "@better-auth/utils/base32";
+import { createOTP } from "@better-auth/utils/otp";
+
 const BASE = "http://localhost:3999";
 const MINUTES = 60_000;
 
@@ -321,7 +324,7 @@ describe("a fresh instance", () => {
   });
 
   test("pages render, despite the build having no secret to prerender with", async () => {
-    for (const path of ["/", "/login", "/signup"]) {
+    for (const path of ["/", "/login", "/signup", "/two-factor"]) {
       expect([path, (await get(path)).status]).toEqual([path, 200]);
     }
   });
@@ -346,6 +349,68 @@ describe("a fresh instance", () => {
     const reset = await resetPassword("Google@Example.com");
     expect(reset.code).toBe(0);
     expect((await signIn("google@example.com", newPassword(reset.stdout))).status).toBe(200);
+  });
+
+  test("a second factor holds at sign-in until the reset command clears it", async () => {
+    await submit(createAction, owner);
+    const [invite] = (await invitesPage(owner)).codes;
+    const session = sessionFrom(await signUp("factor@example.com", invite));
+
+    const enable = await post(
+      "/api/auth/two-factor/enable",
+      { password: "correct-horse" },
+      session,
+    );
+    expect(enable.status).toBe(200);
+    const { totpURI } = (await enable.json()) as { totpURI: string };
+    const secret = new TextDecoder().decode(
+      base32.decode(new URL(totpURI).searchParams.get("secret")!),
+    );
+    const code = () => createOTP(secret, { digits: 6, period: 30 }).totp();
+    const verified = await post(
+      "/api/auth/two-factor/verify-totp",
+      { code: await code() },
+      session,
+    );
+    expect(verified.status).toBe(200);
+    const current = sessionFrom(verified);
+
+    const held = await signIn("factor@example.com");
+    expect(((await held.json()) as { twoFactorRedirect?: boolean }).twoFactorRedirect).toBe(true);
+
+    const reset = await run([
+      "exec",
+      "-T",
+      "app",
+      "node",
+      "reset-second-factor.mjs",
+      "Factor@Example.com",
+    ]);
+    expect(reset.code).toBe(0);
+    expect(await currentUser(current)).toBeNull();
+    const after = await signIn("factor@example.com");
+    expect(after.status).toBe(200);
+    expect(await currentUser(sessionFrom(after))).toBe("factor@example.com");
+  });
+
+  test("the second factor reset fails clearly on an unknown email", async () => {
+    const reset = await run([
+      "exec",
+      "-T",
+      "app",
+      "node",
+      "reset-second-factor.mjs",
+      "nobody@example.com",
+    ]);
+    expect(reset.code).not.toBe(0);
+    expect(reset.stderr).toContain("No account for nobody@example.com");
+  });
+
+  test("settings are for signed-in people", async () => {
+    expect((await get("/settings", owner)).status).toBe(200);
+    const res = await get("/settings");
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/login");
   });
 
   test("the reset command fails clearly on an unknown email", async () => {

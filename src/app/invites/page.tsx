@@ -1,11 +1,10 @@
 import { desc } from "drizzle-orm";
 import { type Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CopyButton } from "~/app/copy-button";
-import { StashMark } from "~/app/stash-mark";
 import { focusRing, touch } from "~/app/stash/ui";
+import { SubPageHeader } from "~/app/sub-page-header";
 import { env } from "~/env";
 import { getSession } from "~/server/better-auth/server";
 import { db } from "~/server/db";
@@ -28,22 +27,7 @@ export default async function InvitesPage() {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-xl flex-col px-6 py-12">
-      <header className="flex items-center justify-between gap-4">
-        <Link
-          href="/stash"
-          className={`text-title text-ink flex w-fit items-center gap-2 rounded font-serif leading-none ${focusRing}`}
-        >
-          <StashMark className="size-[1.1em] rounded-[2px]" />
-          Stash
-        </Link>
-        <Link
-          href="/stash"
-          className={`text-label text-muted hover:text-ink inline-flex shrink-0 items-center gap-1 rounded px-1 font-medium ${touch} ${focusRing}`}
-        >
-          <span aria-hidden="true">←</span>
-          Back to stash
-        </Link>
-      </header>
+      <SubPageHeader />
       <h1 className="text-headline text-ink mt-2 font-serif">Invite codes</h1>
       <p className="text-body text-muted mt-1">
         Each code lets one person start a stash here. It stops working once
