@@ -6,6 +6,7 @@ import { after } from "next/server";
 import { z } from "zod";
 
 import { text, titleOr } from "~/form";
+import { isMapsLink } from "~/maps";
 import { getSession } from "~/server/better-auth/server";
 import { db } from "~/server/db";
 import { collectionItems, collections, items } from "~/server/db/schema";
@@ -124,9 +125,10 @@ async function placeRow(
   url: string,
   userId: string,
 ) {
-  // Past the budget, the link itself can still carry the pin and name.
+  // Only a maps link gets fetched, so only one spends. Past the budget, the link
+  // itself can still carry the pin and name.
   const place = await resolvePlace(url, {
-    offline: !(await spendFetch(userId)),
+    offline: isMapsLink(url) && !(await spendFetch(userId)),
   });
   return {
     ...(data.title ? {} : place.name ? { title: place.name } : {}),

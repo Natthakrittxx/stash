@@ -202,7 +202,9 @@ export const twoFactor = pgTable(
 );
 
 // One row per account that has triggered a server fetch. Counted separately from
-// items because a delete removes the item, not the fetch it caused.
+// items because a delete removes the item, not the fetch it caused. Spent through
+// the spend_fetch function in migration 0006, which db:push doesn't create, so
+// build a database with bootstrap or db:migrate.
 export const fetchBudget = pgTable("fetch_budget", {
   userId: text("user_id")
     .primaryKey()

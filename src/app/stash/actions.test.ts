@@ -105,6 +105,12 @@ test("a place past the budget still saves, reading only its link", async () => {
   expect(fetched).toEqual([]);
 });
 
+test("a place link that won't be fetched spends nothing", async () => {
+  budgetLeft = 1;
+  await createItem(form("place", "https://a.dev/not-a-map"));
+  expect(budgetLeft).toBe(1);
+});
+
 test("a place within the budget follows its link", async () => {
   budgetLeft = 1;
   const link = "https://www.google.com/maps/place/x/@35.6,139.7,17z";

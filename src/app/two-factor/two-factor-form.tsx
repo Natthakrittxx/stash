@@ -20,6 +20,8 @@ function explain(code?: string): Failure {
       return { message: "That backup code didn't work, or it's already used." };
     case "ACCOUNT_TEMPORARILY_LOCKED":
       return { message: "Too many tries. Wait a few minutes, then try again." };
+    // A leftover session cookie whose session has since ended.
+    case "UNAUTHORIZED":
     case "INVALID_TWO_FACTOR_COOKIE":
     case "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE":
       return { message: "This sign-in has run out.", restart: true };
