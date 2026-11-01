@@ -11,7 +11,12 @@ import { INVITE_COOKIE } from "~/invite";
 import { db } from "~/server/db";
 import { inviteCodes } from "~/server/db/schema";
 
-import { securityHooks, securityPasskey, secondFactor } from "./security";
+import {
+  confirmPassword,
+  securityHooks,
+  securityPasskey,
+  secondFactor,
+} from "./security";
 
 // Without this, better-auth's check for an existing email answers first, telling
 // anyone whether an address has an account. Read-only: the atomic delete in the
@@ -91,7 +96,12 @@ export const auth = betterAuth({
   // cache answers that without a DB round trip; a revoked session can outlive
   // its revocation by up to this maxAge. Sign out clears the cookie at once.
   session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
-  plugins: [inviteGate, secondFactor, securityPasskey(env.BETTER_AUTH_URL)],
+  plugins: [
+    inviteGate,
+    secondFactor,
+    securityPasskey(env.BETTER_AUTH_URL),
+    confirmPassword,
+  ],
   hooks: securityHooks,
   socialProviders:
     env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET

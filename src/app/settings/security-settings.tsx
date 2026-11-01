@@ -2,11 +2,15 @@
 
 import { useRouter } from "next/navigation";
 import { type InputHTMLAttributes, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { encode } from "uqr";
 
 import { CopyButton } from "~/app/copy-button";
+import { Modal } from "~/app/modal";
 import { field, focusRing, quietButton, touch } from "~/app/stash/ui";
 import { authClient } from "~/server/better-auth/client";
+
+import { deviceName, suggestName } from "./passkey-name";
 
 const primary = `bg-accent text-body text-bg inline-flex items-center justify-center rounded px-4 py-2 font-medium transition-opacity duration-150 hover:opacity-90 disabled:pointer-events-none disabled:opacity-60 ${touch} ${focusRing}`;
 const secondary = `border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface inline-flex items-center justify-center rounded border px-4 py-2 transition-colors duration-150 disabled:pointer-events-none disabled:opacity-60 ${touch} ${focusRing}`;
@@ -23,11 +27,13 @@ function explain(code?: string): Failure {
   switch (code) {
     case "SESSION_NOT_FRESH":
       return {
-        message: "For safety, this needs a login from the last 10 minutes.",
+        message: "For safety, log in again to do this.",
         logInAgain: true,
       };
     case "INVALID_PASSWORD":
       return { message: "That password isn't right.", field: "password" };
+    case "PASSWORD_NOT_CONFIRMED":
+      return { message: "Enter your password again.", field: "password" };
     case "INVALID_CODE":
       return {
         message: "That code didn't work. Check your app and try again.",
@@ -192,55 +198,176 @@ function BackupCodes({
   );
 }
 
-export function SecondFactorSection({
-  enabled,
-  hasPassword,
+// One step of a guided setup. It replaces the button that was just pressed, so
+// focus goes to its field, or failing that to the step itself.
+function Step({
+  titleId,
+  at,
+  total,
+  title,
+  children,
 }: {
-  enabled: boolean;
+  titleId: string;
+  at: number;
+  total: number;
+  title: string;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    (
+      (ref.current?.querySelector(
+        "input:not([hidden])",
+      ) as HTMLElement | null) ?? ref.current
+    )?.focus();
+  }, []);
+
+  return (
+    <div ref={ref} tabIndex={-1} className="p-6 outline-hidden">
+      {total > 1 && (
+        <p className="text-label text-muted">
+          Step {at} of {total}
+        </p>
+      )}
+      <h2 id={titleId} className="text-title text-ink mt-1 font-serif">
+        {title}
+      </h2>
+      {children}
+    </div>
+  );
+}
+
+function Actions({
+  pending,
+  label,
+  secondary: other,
+  onSecondary,
+}: {
+  pending: boolean;
+  label: string;
+  secondary: string;
+  onSecondary: () => void;
+}) {
+  return (
+    <div className="mt-6 flex flex-wrap gap-2">
+      <button
+        type="submit"
+        disabled={pending}
+        aria-busy={pending}
+        className={primary}
+      >
+        {pending ? "One moment…" : label}
+      </button>
+      <button type="button" onClick={onSecondary} className={secondary}>
+        {other}
+      </button>
+    </div>
+  );
+}
+
+// Focus goes back to the button that opened it. It has to be rendered closed
+// first: nothing outside an open modal dialog can take focus.
+function useSetupDialog() {
+  const [open, setOpen] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
+  const close = () => {
+    flushSync(() => setOpen(false));
+    opener.current?.focus();
+  };
+  return { open, opener, show: () => setOpen(true), close };
+}
+
+// Password managers look for an account to match a password field against, and
+// a confirm-your-password form has nowhere visible to show one.
+function AccountHint({ email }: { email: string }) {
+  return (
+    <input
+      hidden
+      readOnly
+      type="text"
+      name="username"
+      autoComplete="username"
+      value={email}
+    />
+  );
+}
+
+function ConfirmPassword({
+  email,
+  password,
+  failure,
+  onType,
+}: {
+  email: string;
+  password: string;
+  failure: Failure | null;
+  onType: (value: string) => void;
+}) {
+  return (
+    <>
+      <AccountHint email={email} />
+      <CheckedField
+        label="Your password"
+        name="password"
+        type="password"
+        autoComplete="current-password"
+        value={password}
+        failure={failure}
+        onType={onType}
+      />
+    </>
+  );
+}
+
+function ModalFailure({ failure }: { failure: Failure | null }) {
+  if (!failure || failure.field) return null;
+  return (
+    <div className="-mt-3 px-6 pb-6">
+      <FailureNote failure={failure} />
+    </div>
+  );
+}
+
+function AuthenticatorSetup({
+  email,
+  hasPassword,
+  onClose,
+}: {
+  email: string;
   hasPassword: boolean;
+  onClose: () => void;
 }) {
   const router = useRouter();
   const { failure, setFailure, pending, run } = useAction();
+  const [step, setStep] = useState<"confirm" | "scan" | "code" | "codes">(
+    "confirm",
+  );
   const [password, setPassword] = useState("");
   const [setup, setSetup] = useState<{
     uri: string;
     backupCodes: string[];
   } | null>(null);
   const [code, setCode] = useState("");
-  const [newCodes, setNewCodes] = useState<string[] | null>(null);
-
-  const proof = hasPassword ? { password } : {};
-
-  function passwordMissing() {
-    if (!hasPassword || password) return false;
-    setFailure({ message: "Enter your password.", field: "password" });
-    return true;
-  }
-
-  const passwordField = hasPassword && (
-    <CheckedField
-      label="Your password"
-      name="password"
-      type="password"
-      autoComplete="current-password"
-      value={password}
-      failure={failure}
-      onType={(value) => {
-        setPassword(value);
-        setFailure(null);
-      }}
-    />
-  );
+  const titleId = "authenticator-setup";
+  const key = setup
+    ? (new URL(setup.uri).searchParams.get("secret") ?? "")
+    : "";
 
   async function start(event: React.FormEvent) {
     event.preventDefault();
-    if (passwordMissing()) return;
+    if (hasPassword && !password) {
+      setFailure({ message: "Enter your password.", field: "password" });
+      return;
+    }
     const data = await run(() =>
-      authClient.twoFactor.enable(proof as { password: string }),
+      authClient.twoFactor.enable(
+        (hasPassword ? { password } : {}) as { password: string },
+      ),
     );
     if (data) {
       setPassword("");
       setSetup({ uri: data.totpURI, backupCodes: data.backupCodes });
+      setStep("scan");
     }
   }
 
@@ -253,179 +380,485 @@ export function SecondFactorSection({
     const data = await run(() =>
       authClient.twoFactor.verifyTotp({ code: code.trim() }),
     );
-    if (data && setup) {
-      setCode("");
-      setNewCodes(setup.backupCodes);
-      setSetup(null);
+    if (data) {
+      setStep("codes");
       router.refresh();
     }
   }
 
-  async function regenerate() {
-    if (passwordMissing()) return;
-    const data = await run(() =>
-      authClient.twoFactor.generateBackupCodes(proof as { password: string }),
-    );
-    if (data) {
-      setPassword("");
-      setNewCodes(data.backupCodes);
-    }
-  }
+  return (
+    // Backup codes are never shown again, so that step has to be finished on purpose.
+    <Modal labelledBy={titleId} onClose={onClose} locked={step === "codes"}>
+      {step === "confirm" && (
+        <Step
+          titleId={titleId}
+          at={1}
+          total={4}
+          title="Set up an authenticator app"
+        >
+          <form noValidate onSubmit={start}>
+            <p className="text-body text-muted mt-1">
+              You&apos;ll need an app like 1Password or Google Authenticator.
+              Logging in with a password or Google will then ask for a code from
+              it.
+            </p>
+            {hasPassword && (
+              <ConfirmPassword
+                email={email}
+                password={password}
+                failure={failure}
+                onType={(value) => {
+                  setPassword(value);
+                  setFailure(null);
+                }}
+              />
+            )}
+            <Actions
+              pending={pending}
+              label="Continue"
+              secondary="Cancel"
+              onSecondary={onClose}
+            />
+          </form>
+        </Step>
+      )}
 
-  async function turnOff() {
-    if (passwordMissing()) return;
-    const data = await run(() =>
-      authClient.twoFactor.disable(proof as { password: string }),
-    );
-    if (data) {
-      setPassword("");
-      router.refresh();
-    }
-  }
-
-  let body;
-  if (newCodes) {
-    body = <BackupCodes codes={newCodes} onDone={() => setNewCodes(null)} />;
-  } else if (setup) {
-    const key = new URL(setup.uri).searchParams.get("secret") ?? "";
-    body = (
-      <>
-        <p className="text-body text-muted mt-1">
-          Scan this with your authenticator app, then enter the code it shows.
-        </p>
-        <div className="mt-4">
-          <QrCode text={setup.uri} />
-        </div>
-        <p className="text-label text-muted mt-4">Or enter this key by hand:</p>
-        <div className="bg-term-bg mt-1 flex items-center gap-2 rounded px-3 py-2">
-          <code className="text-body text-term-ink min-w-0 flex-1 font-mono break-all">
-            {key}
-          </code>
-          <CopyButton text={key} label="Copy key" className={copyAction} />
-        </div>
-        <form noValidate onSubmit={confirm}>
-          <CheckedField
-            label="Code"
-            name="code"
-            autoFocus
-            autoComplete="one-time-code"
-            inputMode="numeric"
-            spellCheck={false}
-            value={code}
-            failure={failure}
-            onType={(value) => {
-              setCode(value);
-              setFailure(null);
+      {step === "scan" && setup && (
+        <Step titleId={titleId} at={2} total={4} title="Add Stash to your app">
+          <form
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              setStep("code");
             }}
-            className="font-mono"
-          />
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="submit"
-              disabled={pending}
-              aria-busy={pending}
-              className={primary}
-            >
-              {pending ? "One moment…" : "Turn on"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSetup(null);
-                setCode("");
+          >
+            <p className="text-body text-muted mt-1">
+              Scan this with your authenticator app.
+            </p>
+            <div className="mt-4">
+              <QrCode text={setup.uri} />
+            </div>
+            <p className="text-label text-muted mt-4">
+              Or enter this key by hand:
+            </p>
+            <div className="bg-term-bg mt-1 flex items-center gap-2 rounded px-3 py-2">
+              <code className="text-body text-term-ink min-w-0 flex-1 font-mono break-all">
+                {key}
+              </code>
+              <CopyButton text={key} label="Copy key" className={copyAction} />
+            </div>
+            <Actions
+              pending={false}
+              label="Next"
+              secondary="Cancel"
+              onSecondary={onClose}
+            />
+          </form>
+        </Step>
+      )}
+
+      {step === "code" && (
+        <Step titleId={titleId} at={3} total={4} title="Enter the code">
+          <form noValidate onSubmit={confirm}>
+            <p className="text-body text-muted mt-1">
+              Enter the code your app shows for Stash.
+            </p>
+            <CheckedField
+              label="Code"
+              name="code"
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              spellCheck={false}
+              value={code}
+              failure={failure}
+              onType={(value) => {
+                setCode(value);
                 setFailure(null);
               }}
-              className={secondary}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      </>
+              className="font-mono"
+            />
+            <Actions
+              pending={pending}
+              label="Turn on"
+              secondary="Back"
+              onSecondary={() => {
+                setFailure(null);
+                setStep("scan");
+              }}
+            />
+          </form>
+        </Step>
+      )}
+
+      {step === "codes" && setup && (
+        <Step titleId={titleId} at={4} total={4} title="Save your backup codes">
+          <BackupCodes codes={setup.backupCodes} onDone={onClose} />
+        </Step>
+      )}
+
+      <ModalFailure failure={failure} />
+    </Modal>
+  );
+}
+
+function PasskeySetup({
+  email,
+  hasPassword,
+  authenticatorNames,
+  onClose,
+}: {
+  email: string;
+  hasPassword: boolean;
+  authenticatorNames: Record<string, string>;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const { failure, setFailure, pending, run } = useAction();
+  const [step, setStep] = useState<"confirm" | "create" | "name">(
+    hasPassword ? "confirm" : "create",
+  );
+  const [password, setPassword] = useState("");
+  const [added, setAdded] = useState<{ id: string; name?: string } | null>(
+    null,
+  );
+  const [name, setName] = useState("");
+  const titleId = "passkey-setup";
+  // Google-only accounts have no password step.
+  const total = hasPassword ? 3 : 2;
+  const at = (position: number) => (hasPassword ? position : position - 1);
+
+  async function confirm(event: React.FormEvent) {
+    event.preventDefault();
+    if (!password) {
+      setFailure({ message: "Enter your password.", field: "password" });
+      return;
+    }
+    const data = await run(() =>
+      authClient.$fetch<{ status: boolean }>("/confirm-password", {
+        method: "POST",
+        body: { password },
+      }),
     );
-  } else if (enabled) {
-    body = (
-      <>
-        <p className="text-body text-muted mt-1">
-          On. You&apos;re asked for a code after logging in with a password or
-          Google.
-        </p>
-        {passwordField}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={pending}
-            onClick={regenerate}
-            className={secondary}
-          >
-            Get new backup codes
-          </button>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={turnOff}
-            className={secondary}
-          >
-            Turn off
-          </button>
-        </div>
-      </>
-    );
-  } else {
-    body = (
-      <form noValidate onSubmit={start}>
-        <p className="text-body text-muted mt-1">
-          Ask for a code from an app like 1Password or Google Authenticator
-          after logging in with a password or Google.
-        </p>
-        {passwordField}
-        <button
-          type="submit"
-          disabled={pending}
-          aria-busy={pending}
-          className={`${primary} mt-4`}
-        >
-          {pending ? "One moment…" : "Set up"}
-        </button>
-      </form>
-    );
+    if (data) {
+      setPassword("");
+      setStep("create");
+    }
   }
+
+  async function create(event: React.FormEvent) {
+    event.preventDefault();
+    const device = deviceName(navigator.userAgent);
+    const data = await run(async () => {
+      // The browser makes the key here, so it's saved under a name from the start.
+      const result = await authClient.passkey.addPasskey({ name: device });
+      // Confirmed too long ago, say after leaving this open.
+      const error: Result<unknown>["error"] = result.error;
+      if (error?.code === "PASSWORD_NOT_CONFIRMED") setStep("confirm");
+      return result;
+    });
+    if (data) {
+      setAdded({ id: data.id, name: data.name });
+      setName(
+        suggestName(data.aaguid, authenticatorNames, navigator.userAgent),
+      );
+      setStep("name");
+      router.refresh();
+    }
+  }
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    const chosen = name.trim() || added?.name;
+    if (added && chosen && chosen !== added.name) {
+      const data = await run(() =>
+        authClient.passkey.updatePasskey({ id: added.id, name: chosen }),
+      );
+      if (!data) return;
+      router.refresh();
+    }
+    onClose();
+  }
+
+  return (
+    <Modal labelledBy={titleId} onClose={onClose}>
+      {step === "confirm" && (
+        <Step titleId={titleId} at={at(1)} total={total} title="Add a passkey">
+          <form noValidate onSubmit={confirm}>
+            <p className="text-body text-muted mt-1">
+              First, confirm it&apos;s you.
+            </p>
+            <ConfirmPassword
+              email={email}
+              password={password}
+              failure={failure}
+              onType={(value) => {
+                setPassword(value);
+                setFailure(null);
+              }}
+            />
+            <Actions
+              pending={pending}
+              label="Continue"
+              secondary="Cancel"
+              onSecondary={onClose}
+            />
+          </form>
+        </Step>
+      )}
+
+      {step === "create" && (
+        <Step
+          titleId={titleId}
+          at={at(2)}
+          total={total}
+          title="Create your passkey"
+        >
+          <form noValidate onSubmit={create}>
+            <p className="text-body text-muted mt-1">
+              Your browser will ask you to use your fingerprint, face, device
+              PIN or a security key.
+            </p>
+            <Actions
+              pending={pending}
+              label="Create passkey"
+              secondary="Cancel"
+              onSecondary={onClose}
+            />
+          </form>
+        </Step>
+      )}
+
+      {step === "name" && (
+        <Step titleId={titleId} at={at(3)} total={total} title="Check its name">
+          <form noValidate onSubmit={save}>
+            <p className="text-body text-muted mt-1">
+              Your passkey works. This name helps you tell it apart later.
+            </p>
+            <label className="text-label text-muted mt-4 flex max-w-xs flex-col gap-1">
+              Name
+              <input
+                value={name}
+                maxLength={60}
+                onFocus={(event) => event.target.select()}
+                onChange={(event) => setName(event.target.value)}
+                className={field}
+              />
+            </label>
+            <div className="mt-6">
+              <button
+                type="submit"
+                disabled={pending}
+                aria-busy={pending}
+                className={primary}
+              >
+                {pending ? "One moment…" : "Save"}
+              </button>
+            </div>
+          </form>
+        </Step>
+      )}
+
+      <ModalFailure failure={failure} />
+    </Modal>
+  );
+}
+
+// Proton Pass misses a popup's password field when another one sits on the page
+// behind it, so these confirm in a popup as well.
+function SecondFactorChange({
+  email,
+  hasPassword,
+  kind,
+  onClose,
+}: {
+  email: string;
+  hasPassword: boolean;
+  kind: "codes" | "off";
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const { failure, setFailure, pending, run } = useAction();
+  const [password, setPassword] = useState("");
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const titleId = "second-factor-change";
+  const proof = (hasPassword ? { password } : {}) as { password: string };
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (hasPassword && !password) {
+      setFailure({ message: "Enter your password.", field: "password" });
+      return;
+    }
+    if (kind === "codes") {
+      const data = await run(() =>
+        authClient.twoFactor.generateBackupCodes(proof),
+      );
+      if (data) setCodes(data.backupCodes);
+      return;
+    }
+    const data = await run(() => authClient.twoFactor.disable(proof));
+    if (data) {
+      router.refresh();
+      onClose();
+    }
+  }
+
+  return (
+    <Modal labelledBy={titleId} onClose={onClose} locked={!!codes}>
+      {codes ? (
+        <Step titleId={titleId} at={2} total={2} title="Save your backup codes">
+          <BackupCodes codes={codes} onDone={onClose} />
+        </Step>
+      ) : (
+        <Step
+          titleId={titleId}
+          at={1}
+          total={kind === "codes" ? 2 : 1}
+          title={
+            kind === "codes"
+              ? "Get new backup codes"
+              : "Turn off the authenticator app"
+          }
+        >
+          <form noValidate onSubmit={submit}>
+            <p className="text-body text-muted mt-1">
+              {kind === "codes"
+                ? "Your old backup codes will stop working."
+                : "Logging in will stop asking for a code."}
+            </p>
+            {hasPassword && (
+              <ConfirmPassword
+                email={email}
+                password={password}
+                failure={failure}
+                onType={(value) => {
+                  setPassword(value);
+                  setFailure(null);
+                }}
+              />
+            )}
+            <Actions
+              pending={pending}
+              label={kind === "codes" ? "Get new codes" : "Turn off"}
+              secondary="Cancel"
+              onSecondary={onClose}
+            />
+          </form>
+        </Step>
+      )}
+      <ModalFailure failure={failure} />
+    </Modal>
+  );
+}
+
+export function SecondFactorSection({
+  email,
+  enabled,
+  hasPassword,
+}: {
+  email: string;
+  enabled: boolean;
+  hasPassword: boolean;
+}) {
+  const setup = useSetupDialog();
+  const newCodes = useSetupDialog();
+  const off = useSetupDialog();
 
   return (
     <section className="mt-8" aria-labelledby="second-factor">
       <h2 id="second-factor" className="text-title text-ink font-serif">
         Authenticator app
       </h2>
-      {body}
-      {failure && !failure.field && <FailureNote failure={failure} />}
+      {enabled ? (
+        <>
+          <p className="text-body text-muted mt-1">
+            On. You&apos;re asked for a code after logging in with a password or
+            Google.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              ref={newCodes.opener}
+              type="button"
+              aria-haspopup="dialog"
+              onClick={newCodes.show}
+              className={secondary}
+            >
+              Get new backup codes
+            </button>
+            <button
+              ref={off.opener}
+              type="button"
+              aria-haspopup="dialog"
+              onClick={off.show}
+              className={secondary}
+            >
+              Turn off
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-body text-muted mt-1">
+            Ask for a code from an app like 1Password or Google Authenticator
+            after logging in with a password or Google.
+          </p>
+          <button
+            ref={setup.opener}
+            type="button"
+            aria-haspopup="dialog"
+            onClick={setup.show}
+            className={`${primary} mt-4`}
+          >
+            Set up
+          </button>
+        </>
+      )}
+      {setup.open && (
+        <AuthenticatorSetup
+          email={email}
+          hasPassword={hasPassword}
+          onClose={setup.close}
+        />
+      )}
+      {newCodes.open && (
+        <SecondFactorChange
+          email={email}
+          hasPassword={hasPassword}
+          kind="codes"
+          onClose={newCodes.close}
+        />
+      )}
+      {off.open && (
+        <SecondFactorChange
+          email={email}
+          hasPassword={hasPassword}
+          kind="off"
+          onClose={off.close}
+        />
+      )}
     </section>
   );
 }
 
 export function PasskeysSection({
+  email,
   passkeys,
+  hasPassword,
+  authenticatorNames,
 }: {
+  email: string;
   passkeys: { id: string; name: string | null; createdAt: Date | null }[];
+  hasPassword: boolean;
+  authenticatorNames: Record<string, string>;
 }) {
   const router = useRouter();
   const { failure, pending, run } = useAction();
-  const [name, setName] = useState("");
+  const setup = useSetupDialog();
   // Set after mount: the server can't know, and browsers don't offer passkeys on
   // plain-HTTP addresses other than localhost.
   const [supported, setSupported] = useState<boolean | null>(null);
 
   useEffect(() => setSupported(!!window.PublicKeyCredential), []);
-
-  async function add(event: React.FormEvent) {
-    event.preventDefault();
-    const data = await run(() =>
-      authClient.passkey.addPasskey({ name: name.trim() || undefined }),
-    );
-    if (data) {
-      setName("");
-      router.refresh();
-    }
-  }
 
   async function remove(id: string) {
     const data = await run(() => authClient.passkey.deletePasskey({ id }));
@@ -480,32 +913,25 @@ export function PasskeysSection({
         </p>
       )}
       {supported && (
-        <form
-          noValidate
-          onSubmit={add}
-          className="mt-4 flex flex-wrap items-end gap-2"
+        <button
+          ref={setup.opener}
+          type="button"
+          aria-haspopup="dialog"
+          onClick={setup.show}
+          className={`${secondary} mt-4`}
         >
-          <label className="text-label text-muted flex min-w-48 flex-1 flex-col gap-1">
-            Name (optional)
-            <input
-              value={name}
-              maxLength={60}
-              placeholder="My phone"
-              onChange={(event) => setName(event.target.value)}
-              className={field}
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={pending}
-            aria-busy={pending}
-            className={secondary}
-          >
-            {pending ? "One moment…" : "Add a passkey"}
-          </button>
-        </form>
+          Add a passkey
+        </button>
       )}
       {failure && <FailureNote failure={failure} />}
+      {setup.open && (
+        <PasskeySetup
+          email={email}
+          hasPassword={hasPassword}
+          authenticatorNames={authenticatorNames}
+          onClose={setup.close}
+        />
+      )}
     </section>
   );
 }

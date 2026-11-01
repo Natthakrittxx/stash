@@ -1,3 +1,4 @@
+import { commonAuthenticatorNames } from "@better-auth/passkey";
 import { and, asc, eq } from "drizzle-orm";
 import { type Metadata } from "next";
 import { redirect } from "next/navigation";
@@ -44,10 +45,16 @@ export default async function SettingsPage() {
       <SubPageHeader />
       <h1 className="text-headline text-ink mt-2 font-serif">Settings</h1>
       <SecondFactorSection
+        email={session.user.email}
         enabled={!!row?.twoFactorEnabled}
         hasPassword={!!credential}
       />
-      <PasskeysSection passkeys={passkeys} />
+      <PasskeysSection
+        email={session.user.email}
+        passkeys={passkeys}
+        hasPassword={!!credential}
+        authenticatorNames={commonAuthenticatorNames}
+      />
     </main>
   );
 }

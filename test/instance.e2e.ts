@@ -406,6 +406,18 @@ describe("a fresh instance", () => {
     expect(reset.stderr).toContain("No account for nobody@example.com");
   });
 
+  test("adding a passkey needs the password confirmed first", async () => {
+    const options = "/api/auth/passkey/generate-register-options";
+    expect((await get(options, owner)).status).toBe(403);
+    const wrong = await post("/api/auth/confirm-password", { password: "wrong" }, owner);
+    expect(wrong.status).toBe(400);
+
+    const right = await post("/api/auth/confirm-password", { password: "correct-horse" }, owner);
+    expect(right.status).toBe(200);
+    const proof = right.headers.getSetCookie().map((cookie) => cookie.split(";")[0]).join("; ");
+    expect((await get(options, `${owner}; ${proof}`)).status).toBe(200);
+  });
+
   test("settings are for signed-in people", async () => {
     expect((await get("/settings", owner)).status).toBe(200);
     const res = await get("/settings");

@@ -1,13 +1,22 @@
 import { passkey } from "@better-auth/passkey";
 import {
+  type BetterAuthPlugin,
+  type GenericEndpointContext,
+} from "better-auth";
+import {
   APIError,
+  createAuthEndpoint,
   createAuthMiddleware,
   getSessionFromCtx,
 } from "better-auth/api";
 import { twoFactor } from "better-auth/plugins/two-factor";
+import { z } from "zod";
 
 // How long after signing in someone counts as having just proven who they are.
 export const RECENT_SIGN_IN_SECONDS = 10 * 60;
+
+// How long a confirmed password lets this browser add a passkey.
+const PASSWORD_CONFIRMED_SECONDS = 5 * 60;
 
 export const secondFactor = twoFactor({
   issuer: "Stash",
@@ -36,10 +45,9 @@ const SECOND_FACTOR_CHANGES = [
 // could otherwise keep itself alive until it expires, days later.
 const CACHE_RENEWERS = ["/update-user", "/update-session"];
 
-const PASSKEY_CHANGES = [
+const PASSKEY_ADDS = [
   "/passkey/generate-register-options",
   "/passkey/verify-registration",
-  "/passkey/delete-passkey",
 ];
 
 // The plugin's own challenge only covers password sign-in. These are the other
@@ -47,11 +55,10 @@ const PASSKEY_CHANGES = [
 const GOOGLE_CALLBACK = "/callback/:id";
 const GOOGLE_ID_TOKEN = "/sign-in/social";
 
-type Middleware = Parameters<typeof createAuthMiddleware>[0];
-type AuthContext = Parameters<Middleware>[0];
+type AuthContext = GenericEndpointContext;
 
 type LiveSession = {
-  session: { createdAt: Date | string };
+  session: { id: string; createdAt: Date | string };
   user: { id: string; twoFactorEnabled?: boolean | null };
 };
 
@@ -75,6 +82,81 @@ function requireRecentSignIn({ session }: LiveSession) {
     throw new APIError("FORBIDDEN", {
       code: "SESSION_NOT_FRESH",
       message: "session_not_fresh",
+    });
+  }
+}
+
+const confirmedCookie = (ctx: AuthContext) =>
+  ctx.context.createAuthCookie("password_confirmed", {
+    maxAge: PASSWORD_CONFIRMED_SECONDS,
+  });
+
+// The passkey plugin takes no password, and its first request is a GET, so a
+// signed cookie carries the proof across. It names the session and an expiry,
+// because a cookie's max-age only binds a browser that chooses to honour it.
+export const confirmPassword = {
+  id: "confirm-password",
+  endpoints: {
+    confirmPassword: createAuthEndpoint(
+      "/confirm-password",
+      { method: "POST", body: z.object({ password: z.string() }) },
+      async (ctx) => {
+        const { session, user } = await liveSession(ctx);
+        const accounts = await ctx.context.internalAdapter.findAccounts(
+          user.id,
+        );
+        const hash = accounts.find(
+          (account) => account.providerId === "credential",
+        )?.password;
+        if (
+          !hash ||
+          !(await ctx.context.password.verify({
+            hash,
+            password: ctx.body.password,
+          }))
+        ) {
+          throw new APIError("BAD_REQUEST", {
+            code: "INVALID_PASSWORD",
+            message: "invalid_password",
+          });
+        }
+        const cookie = confirmedCookie(ctx);
+        await ctx.setSignedCookie(
+          cookie.name,
+          `${session.id}:${Date.now() + PASSWORD_CONFIRMED_SECONDS * 1000}`,
+          ctx.context.secret,
+          cookie.attributes,
+        );
+        return ctx.json({ status: true });
+      },
+    ),
+  },
+  // As for a sign-in: this is a password check.
+  rateLimit: [
+    {
+      pathMatcher: (path) => path === "/confirm-password",
+      window: 10,
+      max: 3,
+    },
+  ],
+} satisfies BetterAuthPlugin;
+
+// With a password, confirming it proves more than a recent sign-in does. Google-only
+// accounts have none to confirm.
+async function requireConfirmation(ctx: AuthContext, live: LiveSession) {
+  const accounts = await ctx.context.internalAdapter.findAccounts(live.user.id);
+  if (!accounts.some((account) => account.providerId === "credential")) {
+    return requireRecentSignIn(live);
+  }
+  const proof = await ctx.getSignedCookie(
+    confirmedCookie(ctx).name,
+    ctx.context.secret,
+  );
+  const [sessionId, until] = typeof proof === "string" ? proof.split(":") : [];
+  if (sessionId !== live.session.id || !(Number(until) > Date.now())) {
+    throw new APIError("FORBIDDEN", {
+      code: "PASSWORD_NOT_CONFIRMED",
+      message: "password_not_confirmed",
     });
   }
 }
@@ -162,7 +244,10 @@ export const securityHooks = {
         requireRecentSignIn(session);
       }
     }
-    if (PASSKEY_CHANGES.includes(ctx.path)) {
+    if (PASSKEY_ADDS.includes(ctx.path)) {
+      await requireConfirmation(ctx, await liveSession(ctx));
+    }
+    if (ctx.path === "/passkey/delete-passkey") {
       requireRecentSignIn(await liveSession(ctx));
     }
     if (CACHE_RENEWERS.includes(ctx.path)) await liveSession(ctx);

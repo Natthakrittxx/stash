@@ -1,4 +1,11 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  expect,
+  setSystemTime,
+  test,
+} from "bun:test";
 
 import { base32 } from "@better-auth/utils/base32";
 import { createOTP } from "@better-auth/utils/otp";
@@ -6,6 +13,7 @@ import { betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 
 import {
+  confirmPassword,
   RECENT_SIGN_IN_SECONDS,
   securityHooks,
   securityPasskey,
@@ -43,10 +51,13 @@ beforeAll(() => {
 afterAll(() => {
   globalThis.fetch = realFetch;
 });
+afterEach(() => {
+  setSystemTime();
+});
 
 type Row = Record<string, unknown>;
 
-function instance() {
+function instance({ rateLimited = false } = {}) {
   const db: Record<string, Row[]> = {
     user: [],
     account: [],
@@ -70,7 +81,8 @@ function instance() {
         verifyIdToken: async () => true,
       },
     },
-    plugins: [secondFactor, securityPasskey(BASE)],
+    rateLimit: { enabled: rateLimited },
+    plugins: [secondFactor, securityPasskey(BASE), confirmPassword],
     hooks: securityHooks,
   });
 
@@ -103,6 +115,16 @@ function instance() {
             method: "POST",
             headers: { ...JSON_HEADERS, cookie: this.cookie },
             body: JSON.stringify(body),
+          }),
+        ),
+      );
+    }
+
+    async get(path: string) {
+      return this.keep(
+        await auth.handler(
+          new Request(`${BASE}/api/auth${path}`, {
+            headers: { cookie: this.cookie },
           }),
         ),
       );
@@ -398,7 +420,7 @@ test("a password account confirms its password, however old the sign-in", async 
   expect(right.status).toBe(200);
 });
 
-test("a passkey can't be added or removed without a recent sign-in", async () => {
+test("a passkey can't be removed without a recent sign-in", async () => {
   const { db, signUp, ageSessions } = instance();
   const browser = await signUp("on@example.com");
   db.passkey!.push({
@@ -414,11 +436,134 @@ test("a passkey can't be added or removed without a recent sign-in", async () =>
 
   const removed = await browser.post("/passkey/delete-passkey", { id: "p1" });
   expect(removed.status).toBe(403);
+  expect(db.passkey!.length).toBe(1);
+});
+
+const code = async (res: Response) =>
+  ((await res.json()) as { code?: string }).code;
+const guess = (
+  browser: { post: (path: string, body: object) => Promise<Response> },
+  password: string,
+) => browser.post("/confirm-password", { password });
+
+test("a password account can't add a passkey before confirming its password", async () => {
+  const { signUp } = instance();
+  const browser = await signUp("on@example.com");
+
+  const options = await browser.get("/passkey/generate-register-options");
+  expect(options.status).toBe(403);
+  expect(await code(options)).toBe("PASSWORD_NOT_CONFIRMED");
   const added = await browser.post("/passkey/verify-registration", {
     response: {},
   });
   expect(added.status).toBe(403);
-  expect(db.passkey!.length).toBe(1);
+});
+
+test("a wrong password doesn't open passkey setup", async () => {
+  const { signUp } = instance();
+  const browser = await signUp("on@example.com");
+
+  const res = await browser.post("/confirm-password", { password: "wrong" });
+  expect(res.status).toBe(400);
+  expect(await code(res)).toBe("INVALID_PASSWORD");
+  const options = await browser.get("/passkey/generate-register-options");
+  expect(options.status).toBe(403);
+});
+
+test("the right password opens passkey setup, however old the sign-in", async () => {
+  const { signUp, ageSessions } = instance();
+  const browser = await signUp("on@example.com");
+  ageSessions();
+
+  const res = await browser.post("/confirm-password", {
+    password: "correct-horse",
+  });
+  expect(res.status).toBe(200);
+  const options = await browser.get("/passkey/generate-register-options");
+  expect(options.status).toBe(200);
+  // Past the check, into the plugin's own validation of the empty response.
+  const added = await browser.post("/passkey/verify-registration", {
+    response: {},
+  });
+  expect(added.status).not.toBe(403);
+});
+
+test("a confirmed password stops counting after 5 minutes", async () => {
+  const { signUp } = instance();
+  const browser = await signUp("on@example.com");
+  await browser.post("/confirm-password", { password: "correct-horse" });
+  const proof = browser.cookies.get("better-auth.password_confirmed");
+  expect(proof).toBeTruthy();
+
+  setSystemTime(new Date(Date.now() + 5 * 60 * 1000 + 1000));
+  // A browser that kept the cookie past its max-age, as an intruder's might.
+  browser.cookies.set("better-auth.password_confirmed", proof!);
+  const options = await browser.get("/passkey/generate-register-options");
+  expect(options.status).toBe(403);
+});
+
+test("a confirmed password only counts for the browser that confirmed it", async () => {
+  const { Browser, signUp } = instance();
+  const here = await signUp("on@example.com");
+  const other = new Browser();
+  await other.post("/sign-in/email", {
+    email: "on@example.com",
+    password: "correct-horse",
+  });
+  await here.post("/confirm-password", { password: "correct-horse" });
+  other.cookies.set(
+    "better-auth.password_confirmed",
+    here.cookies.get("better-auth.password_confirmed")!,
+  );
+
+  const options = await other.get("/passkey/generate-register-options");
+  expect(options.status).toBe(403);
+});
+
+test("a Google-only account adds a passkey on a recent sign-in instead", async () => {
+  const { googleOnly, ageSessions } = instance();
+  const browser = await googleOnly("g1", "g@example.com");
+
+  const res = await browser.post("/confirm-password", { password: "anything" });
+  expect(res.status).toBe(400);
+  expect((await browser.get("/passkey/generate-register-options")).status).toBe(
+    200,
+  );
+
+  ageSessions();
+  const stale = await browser.get("/passkey/generate-register-options");
+  expect(stale.status).toBe(403);
+  expect(await code(stale)).toBe("SESSION_NOT_FRESH");
+});
+
+test("confirming a password needs a live session", async () => {
+  const { Browser, signUp, turnOn } = instance();
+  expect(
+    (await new Browser().post("/confirm-password", { password: "x" })).status,
+  ).toBe(401);
+
+  const here = await signUp("on@example.com");
+  const revoked = new Browser();
+  await revoked.post("/sign-in/email", {
+    email: "on@example.com",
+    password: "correct-horse",
+  });
+  await turnOn(here, "correct-horse");
+  const res = await revoked.post("/confirm-password", {
+    password: "correct-horse",
+  });
+  expect(res.status).toBe(401);
+});
+
+test("password guesses are rate limited like a sign-in", async () => {
+  const { signUp } = instance({ rateLimited: true });
+  const browser = await signUp("on@example.com");
+  const statuses = [];
+  for (let i = 0; i < 4; i++) {
+    const res = await guess(browser, "wrong");
+    statuses.push(res.status);
+  }
+  expect(statuses).toEqual([400, 400, 400, 429]);
 });
 
 // Flags live at byte 32 of the authenticator data; 0x04 is user verification.
