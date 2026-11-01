@@ -321,21 +321,17 @@
       }
     },
     "typographyMeta": {
-      "hero": {
-        "displayName": "Hero",
-        "purpose": "Landing headline only; the closing full stop is teal. The single fluid size in the system."
-      },
       "display": {
         "displayName": "Display",
         "purpose": "Wordmark beside the logo and the detail pane title."
       },
       "headline": {
         "displayName": "Headline",
-        "purpose": "Landing section headings, auth heading, row-tile monograms."
+        "purpose": "Auth heading, row-tile monograms."
       },
       "title": {
         "displayName": "Title",
-        "purpose": "Row titles, empty-state lines, search field text, landing sub-line. 1.75 leading for Thai."
+        "purpose": "Row titles, empty-state lines, search field text. 1.75 leading for Thai."
       },
       "body": {
         "displayName": "Body",
@@ -369,14 +365,9 @@
         "purpose": "Copied / Failed state on copy controls before reverting."
       },
       {
-        "name": "demo-autotype",
-        "value": "900ms delay, then 120ms per character",
-        "purpose": "Landing demo types one query when the search field is fully on screen; any input cancels it."
-      },
-      {
         "name": "reduced-motion",
         "value": "transition and animation durations forced to 0.01ms",
-        "purpose": "prefers-reduced-motion: reduce; the demo query appears at once."
+        "purpose": "prefers-reduced-motion: reduce."
       },
       {
         "name": "map-fit",
@@ -505,9 +496,9 @@
   ],
   "narrative": {
     "northStar": "The Card Catalog",
-    "overview": "Stash is a library drawer, not a dashboard. Every saved thing is a catalogued entry: a small tile to recognise it by, a serif title to read it by, and a muted line of host and tags to file it by. The whole product, landing page included, runs this one world. The landing does not perform a separate brand; its demo frame is the app's own list (tool rows and terminal formula cards) behind the app's own search field, so what a visitor sees is what they get.\n\nThe palette is cool paper and ink with one enamel teal. Neutrals lean slightly toward the accent's hue and never warm. Depth is tonal: a surface step and a hairline, never a lifted card. Type carries the hierarchy in three voices: a book serif for anything you read as content (titles, headings, the hero), a neutral sans for the controls around it, and a mono for commands. Commands get their own material: an always-dark console card that stays dark in both themes, because a command lives in a terminal.\n\nLight and dark are both first-class. The OS preference drives the theme until the toggle writes an explicit choice, and every token flips from one set of custom properties.",
+    "overview": "Stash is a library drawer, not a dashboard. Every saved thing is a catalogued entry: a small tile to recognise it by, a serif title to read it by, and a muted line of host and tags to file it by. The whole product runs this one world.\n\nThe palette is cool paper and ink with one enamel teal. Neutrals lean slightly toward the accent's hue and never warm. Depth is tonal: a surface step and a hairline, never a lifted card. Type carries the hierarchy in three voices: a book serif for anything you read as content (titles, headings), a neutral sans for the controls around it, and a mono for commands. Commands get their own material: an always-dark console card that stays dark in both themes, because a command lives in a terminal.\n\nLight and dark are both first-class. The OS preference drives the theme until the toggle writes an explicit choice, and every token flips from one set of custom properties.",
     "keyCharacteristics": [
-      "One world across landing, auth, and app; the landing demo reuses the app's row and formula idioms.",
+      "One world across auth and app.",
       "Cool neutrals plus a single teal accent; one semantic hue (danger) beyond it.",
       "Serif for content, sans for chrome, mono for commands.",
       "Flat and tonal; the only shadow belongs to the floating toast.",
@@ -537,7 +528,7 @@
       },
       {
         "name": "The Fixed Scale Rule",
-        "body": "The app's scale is five fixed rem steps (label 0.8125, body 0.875, title 1, headline 1.5, display 1.875). Dense by choice: the small steps stay readable because weight and tone carry the hierarchy (500 for anything you press or that names a field, 400 for what you type and read), not size. No clamp() inside the product; the landing hero is the one fluid exception.",
+        "body": "The app's scale is five fixed rem steps (label 0.8125, body 0.875, title 1, headline 1.5, display 1.875). Dense by choice: the small steps stay readable because weight and tone carry the hierarchy (500 for anything you press or that names a field, 400 for what you type and read), not size. No clamp().",
         "section": "typography"
       },
       {
@@ -562,7 +553,7 @@
       "Do set commands in the pinned console palette, in Geist Mono, with a teal prompt.",
       "Do keep app type on the five fixed rem steps and give Thai-capable text 1.75 leading.",
       "Do keep the teal as the only active color; danger is the only other hue.",
-      "Do respect reduced motion: transitions collapse to near zero, and the landing's auto-typed demo query appears at once.",
+      "Do respect reduced motion: transitions collapse to near zero.",
       "Do draw any map in the live theme tokens: land on surface, ink pins with a paper stroke, teal only for the selected pin, you as a hollow ink ring.",
       "Do keep the map's chrome in the app's idioms: a field-edged control stack with drawn SVG icons, muted label-size scale and attribution, and the toast float only for what floats over the map."
     ],
@@ -572,7 +563,6 @@
       "Don't lift containers with shadows; reserve the shadow for content that floats.",
       "Don't introduce tracked uppercase eyebrows over sections; rail and section labels are sentence case and muted.",
       "Don't add a second accent hue or a decorative use of teal.",
-      "Don't give the landing its own visual world; it runs the app's.",
       "Don't give place rows a tile; a place has nothing to show in one that its name doesn't already say.",
       "Don't ship a vendor basemap style, a building layer, or the map library's default chrome."
     ]

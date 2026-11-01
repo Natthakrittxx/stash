@@ -26,12 +26,6 @@ colors:
   term-accent: "#4bc3cc"
   term-danger: "#f0a0a8"
 typography:
-  hero:
-    fontFamily: "Source Serif 4, Noto Serif Thai, ui-serif, Georgia, serif"
-    fontSize: "clamp(2.5rem, 7vw, 4.5rem)"
-    fontWeight: 400
-    lineHeight: 1.05
-    letterSpacing: "-0.025em"
   display:
     fontFamily: "Source Serif 4, Noto Serif Thai, ui-serif, Georgia, serif"
     fontSize: "1.875rem"
@@ -157,14 +151,14 @@ components:
 
 **Creative North Star: "The Card Catalog"**
 
-Stash is a library drawer, not a dashboard. Every saved thing is a catalogued entry: a small tile to recognise it by, a serif title to read it by, and a muted line of host and tags to file it by. The whole product, landing page included, runs this one world. The landing does not perform a separate brand; its demo frame is the app's own list (tool rows and terminal formula cards) behind the app's own search field, so what a visitor sees is what they get.
+Stash is a library drawer, not a dashboard. Every saved thing is a catalogued entry: a small tile to recognise it by, a serif title to read it by, and a muted line of host and tags to file it by. The whole product runs this one world.
 
-The palette is cool paper and ink with one enamel teal. Neutrals lean slightly toward the accent's hue and never warm. Depth is tonal: a surface step and a hairline, never a lifted card. Type carries the hierarchy in three voices: a book serif for anything you read as content (titles, headings, the hero), a neutral sans for the controls around it, and a mono for commands. Commands get their own material: an always-dark console card that stays dark in both themes, because a command lives in a terminal.
+The palette is cool paper and ink with one enamel teal. Neutrals lean slightly toward the accent's hue and never warm. Depth is tonal: a surface step and a hairline, never a lifted card. Type carries the hierarchy in three voices: a book serif for anything you read as content (titles, headings), a neutral sans for the controls around it, and a mono for commands. Commands get their own material: an always-dark console card that stays dark in both themes, because a command lives in a terminal.
 
 Light and dark are both first-class. The OS preference drives the theme until the toggle writes an explicit choice, and every token flips from one set of custom properties.
 
 **Key Characteristics:**
-- One world across landing, auth, and app; the landing demo reuses the app's row and formula idioms.
+- One world across auth and app.
 - Cool neutrals plus a single teal accent; one semantic hue (danger) beyond it.
 - Serif for content, sans for chrome, mono for commands.
 - Flat and tonal; the only shadow belongs to the floating toast.
@@ -176,12 +170,12 @@ Light and dark are both first-class. The OS preference drives the theme until th
 Cool paper, near-black ink, and one enamel teal; the dark theme inverts the ramp and lifts the teal so it still clears contrast.
 
 ### Primary
-- **Enamel Teal** (accent; accent-dark in dark theme): the one active color. Primary button fill, selected segment and filter fill, links, the selected row's chevron, focus outlines, and the hero's closing full stop. Text on its fill is the background color.
+- **Enamel Teal** (accent; accent-dark in dark theme): the one active color. Primary button fill, selected segment and filter fill, links, the selected row's chevron, and focus outlines. Text on its fill is the background color.
 
 ### Neutral
 - **Catalog Paper** (bg / bg-dark): page ground and input fill.
 - **Drawer Grey** (surface / surface-dark): the one tonal step. Hovered and selected rows, row tiles, toast, the in-pane command block.
-- **Hairline** (border / border-dark): dividers between rows, section rules, tile and input outlines, the landing's demo frame.
+- **Hairline** (border / border-dark): dividers between rows, section rules, tile and input outlines.
 - **Ink** (ink / ink-dark): titles, headings, input text.
 - **Pencil** (muted / muted-dark): secondary text. Hosts, tags, descriptions, counts, idle controls, placeholders.
 
@@ -213,17 +207,16 @@ Cool paper, near-black ink, and one enamel teal; the dark theme inverts the ramp
 **Character:** A book serif carries what you saved; an engineered grotesk with squared curves carries what you do to it. Each Latin face has a Thai face behind it in the same stack: Noto Serif Thai behind the serif so a Thai title lands in a serif, IBM Plex Sans Thai behind the sans, drawn as one family with the Latin, so Thai tags and labels match it exactly.
 
 ### Hierarchy
-- **Hero** (400, clamp(2.5rem, 7vw, 4.5rem), 1.05, tight tracking): landing headline only; the closing full stop is set in teal. The single fluid size in the system.
 - **Display** (400, 1.875rem, leading-none): the wordmark beside the logo, the detail pane's title.
-- **Headline** (400, 1.5rem): section headings on the landing, auth page heading, monogram letters in row tiles.
-- **Title** (400, 1rem, 1.75 for Thai): row titles, empty-state lines, the landing sub-line.
+- **Headline** (400, 1.5rem): auth page heading, monogram letters in row tiles.
+- **Title** (400, 1rem, 1.75 for Thai): row titles, empty-state lines.
 - **Body** (Plex Sans 400, 0.875rem): descriptions (1.625 leading), form fields including the URL and search; primary buttons at 500.
 - **Label** (Plex Sans, 0.8125rem): hosts, tags, counts, status lines, toasts and footer at 400; field labels, segmented controls, filter rows and quiet buttons at 500. Semibold (600) for section and rail headings and the selected row title.
 - **Command** (Geist Mono, body size, 1.625): commands in formula cards and the detail pane. Mono is for showing commands; the composer's one field takes links and commands alike, so it stays in the UI sans.
 - **Map labels** (Noto Sans Regular; 13, 12 and 11px for city, town and smaller places; 11px street names from zoom 14; cluster counts in Noto Sans Bold 12px): muted, English names first, then Latin, then local. A forced adaptation, not a type choice: OpenFreeMap serves only Noto glyphs, so the basemap cannot set Plex. It holds inside the map canvas only; every HTML element on the map (controls, scale, attribution, the place card) keeps the app's faces and fixed steps.
 
 ### Named Rules
-**The Fixed Scale Rule.** The app's scale is five fixed rem steps (label 0.8125, body 0.875, title 1, headline 1.5, display 1.875). Dense by choice: the small steps stay readable because weight and tone carry the hierarchy (500 for anything you press or that names a field, 400 for what you type and read), not size. No clamp() inside the product; the landing hero is the one fluid exception.
+**The Fixed Scale Rule.** The app's scale is five fixed rem steps (label 0.8125, body 0.875, title 1, headline 1.5, display 1.875). Dense by choice: the small steps stay readable because weight and tone carry the hierarchy (500 for anything you press or that names a field, 400 for what you type and read), not size. No clamp().
 
 **The Thai Leading Rule.** Text that holds Thai gets 1.75 line-height so stacked tone marks never clip; `lang="th"` on the element applies it. List-row titles take 1.75 whatever their language, so mixed Thai and Latin rows keep one rhythm. The detail pane's title and descriptions use Latin leading (1.25, 1.625) unless they hold Thai.
 
@@ -231,11 +224,9 @@ Cool paper, near-black ink, and one enamel teal; the dark theme inverts the ramp
 
 ## Layout
 
-The landing is a single centered column (max 56rem) with 16px gutters (24px from sm), the hero opening 80px down (112px from sm) and sections spaced 96px apart. Prose caps at 44ch for the sub-line and 52 to 60ch elsewhere. The kinds list is a definition list: term over description on mobile, a 10rem term column beside it from sm.
-
 The app is a full-width master–detail layout. Below lg (64rem) it is one column: filters as inline pills above a list. From lg, a 13rem sticky filter rail, the list, and a 24rem sticky detail pane sit side by side with 40px gaps; both sticky columns pin at 40px from the top. Auth is a centered 24rem column, vertically centred.
 
-Rhythm is a 4px base: 4 and 8px inside controls, 16px row padding and tile gap, 24 to 40px between groups, 96px between landing sections. Lists are dense by divider, not by card: rows separated by a hairline with 16px vertical padding; formula cards stack with a 12px gap.
+Rhythm is a 4px base: 4 and 8px inside controls, 16px row padding and tile gap, 24 to 40px between groups. Lists are dense by divider, not by card: rows separated by a hairline with 16px vertical padding; formula cards stack with a 12px gap.
 
 Places, or an open collection, turns the app into a map. From lg it becomes an app shell: the page stops scrolling and fills the window height. The 13rem rail and a 22rem index scroll in their own columns, each with a 6px inset so focus rings clear the clipped edges, and the map fills from the index's edge to the window's right and bottom edges behind a hairline top and left border. Below lg the map is sticky at the top, 50dvh tall and full-bleed, under the header, search and paste trigger, with the index scrolling beneath it, so search and capture keep the lead. Places rows carry a scroll margin, so a row scrolled into view lands below the sticky map. With nothing in scope (no places, or an empty collection) there is no map at all: a serif title-size line and a muted body line stand where it would be.
 
@@ -253,7 +244,7 @@ The map adds two more floaters and gives them the same shadow: the place card ov
 
 ## Shapes
 
-Small, quiet corners. Controls, inputs, tiles, the composer, and toasts share a 4px radius. The two framed containers that hold whole compositions, the formula console and the landing's demo frame, take 8px. Fully round shapes appear only as the console's three title-bar dots; mobile filter "pills" keep the 4px corner. Borders are 1px hairlines throughout; the console's border uses the terminal hairline. On the map, pins, their rings and clusters are circles: a point is round. The map's control stack and place card keep the 4px corner.
+Small, quiet corners. Controls, inputs, tiles, the composer, and toasts share a 4px radius. The formula console, which holds a whole composition, takes 8px. Fully round shapes appear only as the console's three title-bar dots; mobile filter "pills" keep the 4px corner. Borders are 1px hairlines throughout; the console's border uses the terminal hairline. On the map, pins, their rings and clusters are circles: a point is round. The map's control stack and place card keep the 4px corner.
 
 ## Components
 
@@ -300,9 +291,6 @@ Small, quiet corners. Controls, inputs, tiles, the composer, and toasts share a 
 - **Style:** fixed 16px from the bottom-right corner (full width less 16px gutters on phones), max 24rem, surface ground, hairline, 4px radius, 12px by 16px, the toast float shadow. Errors carry a wine mark and text.
 - **Kinds:** error (alert, Dismiss), undo (8s, held while hovered or keyboard-focused), saved receipt ("✓ Saved “title”", 4s, no action).
 
-### Landing demo frame
-- **Style:** an 8px-radius hairline frame (16px padding, 24px from sm) holding the app's search field, a polite live status line, and the app's Tools and Formulae sections, each headed by a semibold label with a muted count over a hairline.
-
 ### Places index
 - **Heading:** the open collection's name, or "Places", in headline serif. An open collection adds a quiet "Delete collection" that confirms in place ("Its places stay in your stash.") with a wine Delete link.
 - **Rows:** hairline-divided, 12px padding, no tile. A serif title on one line, then "area · tags" in muted label text, where the area is the address segment before the city. Hover and selection take the surface ground; the selected row goes semibold with a teal chevron and aria-current. With Near me on, the distance shows as a tabular muted label before the chevron.
@@ -319,6 +307,7 @@ Small, quiet corners. Controls, inputs, tiles, the composer, and toasts share a 
 - **Scale and attribution:** a metric scale at bottom left and text attribution at bottom right (the words, never the "i" button), both muted label-size text on a translucent bg.
 - **Set location:** a bg banner at top left with a hairline and the toast float shadow, announced as a status: "Click (Tap on touch) the map where “X” is, or move it under the cross and press Enter.", with a teal underlined "Pin here" and a quiet Cancel. An ink cross marks the map's centre, the cursor becomes a crosshair, and the map takes focus so the arrow keys pan it; Enter or "Pin here" pins at the cross, Esc cancels. No other pin stays teal meanwhile.
 - **Tile failure:** a muted label-size line on the map ("Map tiles didn't load. Your places are still listed."); the index keeps working.
+- **No WebGL2:** the same muted line ("This browser can't draw the map. Your places are still listed."), with no zoom buttons. The index keeps working; Set location offers only Cancel.
 - **Motion:** fits and the ease to an off-screen selection take 600ms at most, zoom 250ms; all jump under reduced motion. The zoom buttons zoom about the selected pin while it is on screen, so it stays put.
 - **Honest narrowing:** any refit (a search, tag, collection, Show all, Near me) drops the visitor's own view, and a place's card closes once the place leaves the view, so the index, its status line and the card never disagree with the map.
 
@@ -347,7 +336,7 @@ Small, quiet corners. Controls, inputs, tiles, the composer, and toasts share a 
 - **Do** set commands in the pinned console palette, in Geist Mono, with a teal prompt.
 - **Do** keep app type on the five fixed rem steps and give Thai-capable text 1.75 leading.
 - **Do** keep the teal as the only active color; danger is the only other hue.
-- **Do** respect reduced motion: transitions collapse to near zero, and the landing's auto-typed demo query appears at once.
+- **Do** respect reduced motion: transitions collapse to near zero.
 - **Do** draw any map in the live theme tokens: land on surface, ink pins with a paper stroke, teal only for the selected pin, you as a hollow ink ring.
 - **Do** keep the map's chrome in the app's idioms: a field-edged control stack with drawn SVG icons, muted label-size scale and attribution, and the toast float only for what floats over the map.
 
@@ -357,6 +346,5 @@ Small, quiet corners. Controls, inputs, tiles, the composer, and toasts share a 
 - **Don't** lift containers with shadows; reserve the shadow for content that floats.
 - **Don't** introduce tracked uppercase eyebrows over sections; rail and section labels are sentence case and muted.
 - **Don't** add a second accent hue or a decorative use of teal.
-- **Don't** give the landing its own visual world; it runs the app's.
 - **Don't** give place rows a tile; a place has nothing to show in one that its name doesn't already say.
 - **Don't** ship a vendor basemap style, a building layer, or the map library's default chrome.

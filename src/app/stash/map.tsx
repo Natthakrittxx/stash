@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import {
   type GeoJSONSource,
+  GPUInitializationError,
   type MapGeoJSONFeature,
   MapLibreMap,
   Popup,
@@ -381,6 +382,7 @@ export default function PlaceMap(props: {
   const [popupNode] = useState(() => document.createElement("div"));
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [noWebGL, setNoWebGL] = useState(false);
   // Handlers bind once at mount; they read the latest props through this.
   const latest = useRef(props);
   useEffect(() => {
@@ -403,17 +405,25 @@ export default function PlaceMap(props: {
   const dataRef = useRef(data);
 
   useEffect(() => {
-    const map = new MapLibreMap({
-      container: box.current!,
-      style: style(dataRef.current),
-      center: [100.5, 13.75],
-      zoom: 2,
-      dragRotate: false,
-      pitchWithRotate: false,
-      touchPitch: false,
-      // Always the words, never the "i" button: its icon is black in both themes.
-      attributionControl: { compact: false },
-    });
+    let map: MapLibreMap;
+    try {
+      map = new MapLibreMap({
+        container: box.current!,
+        style: style(dataRef.current),
+        center: [100.5, 13.75],
+        zoom: 2,
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
+        // Always the words, never the "i" button: its icon is black in both themes.
+        attributionControl: { compact: false },
+      });
+    } catch (e) {
+      // No WebGL2 (say, hardware acceleration off): the index still works.
+      if (!(e instanceof GPUInitializationError)) throw e;
+      setNoWebGL(true);
+      return;
+    }
     mapRef.current = map;
     map.touchZoomRotate.disableRotation();
     map.addControl(new ScaleControl({ unit: "metric" }), "bottom-left");
@@ -607,7 +617,7 @@ export default function PlaceMap(props: {
     <div className="bg-surface relative h-full w-full">
       {/* The overlays come before the map in the DOM (and sit above it), so
           Shift+Tab from the focused map reaches them before MapLibre's links. */}
-      {props.dropping && (
+      {props.dropping && !noWebGL && (
         <>
           {/* The spot "Pin here" uses: the map's centre. */}
           <svg
@@ -649,22 +659,26 @@ export default function PlaceMap(props: {
       )}
 
       <div className="border-field bg-bg divide-border absolute top-3 right-3 z-10 flex flex-col divide-y overflow-hidden rounded border">
-        <button
-          type="button"
-          aria-label="Zoom in"
-          onClick={() => zoom(1)}
-          className={control}
-        >
-          <Icon d="M12 6v12M6 12h12" />
-        </button>
-        <button
-          type="button"
-          aria-label="Zoom out"
-          onClick={() => zoom(-1)}
-          className={control}
-        >
-          <Icon d="M6 12h12" />
-        </button>
+        {!noWebGL && (
+          <>
+            <button
+              type="button"
+              aria-label="Zoom in"
+              onClick={() => zoom(1)}
+              className={control}
+            >
+              <Icon d="M12 6v12M6 12h12" />
+            </button>
+            <button
+              type="button"
+              aria-label="Zoom out"
+              onClick={() => zoom(-1)}
+              className={control}
+            >
+              <Icon d="M6 12h12" />
+            </button>
+          </>
+        )}
         <button
           type="button"
           aria-label="Show places near me"
@@ -677,7 +691,24 @@ export default function PlaceMap(props: {
         </button>
       </div>
 
-      {failed && !props.dropping && (
+      {noWebGL && (
+        <div className="bg-bg/90 text-label text-muted absolute top-3 left-3 z-10 flex max-w-[calc(100%-5rem)] flex-wrap items-center gap-x-3 rounded px-2 py-1">
+          <p>
+            This browser can&apos;t draw the map. Your places are still listed.
+          </p>
+          {props.dropping && (
+            <button
+              type="button"
+              onClick={props.onCancelDrop}
+              className="hover:text-ink focus-visible:outline-accent rounded font-medium focus-visible:outline-2 focus-visible:outline-offset-2 pointer-coarse:min-h-11"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
+
+      {failed && !noWebGL && !props.dropping && (
         <p className="bg-bg/90 text-label text-muted absolute top-3 left-3 z-10 max-w-[calc(100%-5rem)] rounded px-2 py-1">
           Map tiles didn&apos;t load. Your places are still listed.
         </p>

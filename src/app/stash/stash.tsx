@@ -1016,7 +1016,8 @@ export function Stash({
             target="_blank"
             rel="noopener noreferrer"
             aria-label="GitHub repository (opens in a new tab)"
-            className={`text-muted hover:text-ink grid h-9 w-9 shrink-0 place-items-center rounded transition-colors duration-150 ${focusRing}`}
+            // Pulled in so the glyphs, not their 36px boxes, set the rhythm.
+            className={`text-muted hover:text-ink -mr-2.5 -ml-1 grid h-9 w-9 shrink-0 place-items-center rounded transition-colors duration-150 ${focusRing}`}
           >
             <GitHubMark className="size-[18px]" />
           </a>

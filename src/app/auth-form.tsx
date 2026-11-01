@@ -186,14 +186,11 @@ export function AuthForm({
       <div className="fixed top-4 right-4">
         <ThemeToggle />
       </div>
-      {/* The app's own wordmark (serif, ink), and the way back to the landing. */}
-      <Link
-        href="/"
-        className="text-title text-ink focus-visible:outline-accent flex w-fit items-center gap-2 rounded font-serif leading-none focus-visible:outline-2 focus-visible:outline-offset-2"
-      >
+      {/* The app's own wordmark (serif, ink). */}
+      <div className="text-title text-ink flex w-fit items-center gap-2 font-serif leading-none">
         <StashMark className="size-[1.1em] rounded-[2px]" />
         Stash
-      </Link>
+      </div>
       <h1 className="text-headline text-ink mt-2 font-serif">
         {isSignup ? "Start a stash" : "Open your stash"}
       </h1>

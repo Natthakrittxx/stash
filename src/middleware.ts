@@ -6,15 +6,16 @@ const SESSION_COOKIES = [
   "__Secure-better-auth.session_token",
 ];
 
-// Logged-in users fork straight to their stash. A cookie check only, no DB: a
-// stale cookie lands on /stash, whose real session check sends it to /login.
+// The root has no page: logged-in users go to their stash, everyone else to
+// /login. A cookie check only, no DB: a stale cookie lands on /stash, whose real
+// session check sends it to /login.
 // Read directly rather than via better-auth/cookies, which drags jose (~35 kB
 // and Edge-incompatible warnings) into the middleware for one lookup.
 export function middleware(request: NextRequest) {
-  if (SESSION_COOKIES.some((name) => request.cookies.has(name))) {
-    return NextResponse.redirect(new URL("/stash", request.url));
-  }
-  return NextResponse.next();
+  const signedIn = SESSION_COOKIES.some((name) => request.cookies.has(name));
+  return NextResponse.redirect(
+    new URL(signedIn ? "/stash" : "/login", request.url),
+  );
 }
 
 export const config = { matcher: "/" };

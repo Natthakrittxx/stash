@@ -324,9 +324,18 @@ describe("a fresh instance", () => {
   });
 
   test("pages render, despite the build having no secret to prerender with", async () => {
-    for (const path of ["/", "/login", "/signup", "/two-factor"]) {
+    for (const path of ["/login", "/signup", "/two-factor"]) {
       expect([path, (await get(path)).status]).toEqual([path, 200]);
     }
+  });
+
+  test("the root goes to login, or to the stash for a session cookie", async () => {
+    const target = async (cookie?: string) => {
+      const res = await get("/", cookie);
+      return [res.status, new URL(res.headers.get("location")!, BASE).pathname];
+    };
+    expect(await target()).toEqual([307, "/login"]);
+    expect(await target("better-auth.session_token=x")).toEqual([307, "/stash"]);
   });
 
   test("the reset command replaces a password and ends old sessions", async () => {
