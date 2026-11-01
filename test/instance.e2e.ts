@@ -77,8 +77,8 @@ async function freshDatabase() {
   await compose("up", "-d", "--wait", "db");
 }
 
-const setupCodes = async () =>
-  [...(await logs()).matchAll(/Setup code: (\S+)/g)].map((m) => m[1]!);
+const ownerNotices = async () =>
+  (await logs()).match(/becomes the Owner/g)?.length ?? 0;
 
 // Each request looks like a new visitor, or better-auth's sign-in rate limit
 // (3 per 10s per address) would decide these tests instead of the code under test.
@@ -166,7 +166,7 @@ afterAll(async () => {
 }, 2 * MINUTES);
 
 describe("a fresh instance", () => {
-  let setupCode = "";
+  let ownerEmail = "";
   let owner = "";
   let member = "";
   let createAction = "";
@@ -191,45 +191,45 @@ describe("a fresh instance", () => {
     expect(found.trim()).toBe("");
   });
 
-  test("prints one setup code, at least 128 bits long", async () => {
-    const codes = await setupCodes();
-    expect(codes.length).toBe(1);
-    setupCode = codes[0]!;
-    expect(setupCode.length).toBeGreaterThanOrEqual(22);
-  });
-
-  test("refuses signup with no code or a wrong code", async () => {
-    for (const res of [await signUp("a@example.com"), await signUp("a@example.com", "wrong")]) {
-      expect(res.status).toBe(403);
-      expect(((await res.json()) as { code: string }).code).toBe("INVITE_REQUIRED");
-    }
-  });
-
-  test("reprints the same setup code on restart until it is redeemed", async () => {
+  test("says on every boot that the first signup becomes the Owner", async () => {
+    expect(await ownerNotices()).toBe(1);
     await compose("restart", "app");
     await waitForApp();
-    const codes = await setupCodes();
-    expect(codes.length).toBe(2);
-    expect(codes[1]).toBe(setupCode);
+    expect(await ownerNotices()).toBe(2);
   }, 3 * MINUTES);
 
-  test("redeeming the setup code creates the Owner", async () => {
-    const res = await signUp("owner@example.com", setupCode);
-    expect(res.status).toBe(200);
-    owner = sessionFrom(res);
+  test("the signup page asks the first person for no code", async () => {
+    const html = await (await get("/signup")).text();
+    expect(html).not.toContain('name="invite"');
+    expect(html).toContain("becomes the Owner");
+  });
+
+  test("the first signup needs no code and becomes the Owner, even in a race", async () => {
+    const emails = ["a", "b", "c", "d", "e"].map((name) => `${name}@example.com`);
+    const results = await Promise.all(emails.map((email) => signUp(email)));
+    const won = results.filter((res) => res.status === 200);
+    expect(won.length).toBe(1);
+    expect((await psql(`select count(*), count(*) filter (where is_owner) from "user"`)).trim()).toBe("1|1");
+
+    ownerEmail = emails[results.indexOf(won[0]!)]!;
+    owner = sessionFrom(won[0]!);
     expect((await get("/invites", owner)).status).toBe(200);
   });
 
-  test("the setup code works only once", async () => {
-    expect((await signUp("late@example.com", setupCode)).status).toBe(403);
+  test("after that, signup refuses no code or a wrong code", async () => {
+    for (const res of [await signUp("late@example.com"), await signUp("late@example.com", "wrong")]) {
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { code: string }).code).toBe("INVITE_REQUIRED");
+    }
+    expect(await (await get("/signup")).text()).toContain('name="invite"');
   });
 
-  test("no setup code appears once an account exists, and sessions survive recreating the container", async () => {
+  test("the notice stops once an account exists, and sessions survive recreating the container", async () => {
     await compose("up", "-d", "--force-recreate", "--no-deps", "app");
     await waitForApp();
-    // Recreating replaces the logs, so any setup code here would be a new one.
-    expect(await setupCodes()).toEqual([]);
-    expect(await currentUser(owner)).toBe("owner@example.com");
+    // Recreating replaces the logs, so any notice here would be a new one.
+    expect(await ownerNotices()).toBe(0);
+    expect(await currentUser(owner)).toBe(ownerEmail);
   }, 3 * MINUTES);
 
   test("the Owner creates a code that admits one person", async () => {
@@ -565,8 +565,8 @@ describe("upgrading an instance that already has accounts", () => {
     await waitForApp();
   }, 5 * MINUTES);
 
-  test("creates no setup code", async () => {
-    expect(await setupCodes()).toEqual([]);
+  test("doesn't offer the Owner role to the next signup", async () => {
+    expect(await ownerNotices()).toBe(0);
     expect(await psql("select count(*) from invite_code")).toBe("0");
   });
 

@@ -11,10 +11,9 @@ You need Docker with Compose.
 ```sh
 curl -O https://raw.githubusercontent.com/Natthakrittxx/stash/main/compose.yml
 docker compose up -d
-docker compose logs app | grep "Setup code"
 ```
 
-Open <http://localhost:3000/signup> and enter the setup code. That account becomes the **Owner** of this instance. From then on, signup needs an invite code, which the Owner creates under **Invites** in the header and can share as the code or as a signup link with the code filled in.
+Open <http://localhost:3000/signup> and sign up. The first person to do so becomes the **Owner** of this instance, with no code needed, so do it before anyone else can reach the address. From then on, signup needs an invite code, which the Owner creates under **Invites** in the header and can share as the code or as a signup link with the code filled in.
 
 ## Configuration
 
@@ -98,7 +97,7 @@ You need [Bun](https://bun.sh) and Docker.
 ```sh
 bun install
 docker compose -f compose.dev.yml up -d --wait
-bun run bootstrap   # applies migrations and prints a setup code
+bun run bootstrap   # applies migrations
 bun dev
 ```
 

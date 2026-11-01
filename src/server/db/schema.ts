@@ -126,19 +126,12 @@ export const user = pgTable(
 
 // Unused codes only: redeeming or revoking one deletes its row, so a row
 // existing is what makes a code valid.
-export const inviteCodes = pgTable(
-  "invite_code",
-  {
-    code: text("code").primaryKey(),
-    isSetup: boolean("is_setup").notNull().default(false),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    uniqueIndex("invite_code_one_setup").on(t.isSetup).where(sql`is_setup`),
-  ],
-);
+export const inviteCodes = pgTable("invite_code", {
+  code: text("code").primaryKey(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 export const session = pgTable("session", {
   id: text("id").primaryKey(),

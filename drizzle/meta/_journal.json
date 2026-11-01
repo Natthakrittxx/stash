@@ -50,6 +50,13 @@
       "when": 1793520035940,
       "tag": "0006_fetch_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793547125934,
+      "tag": "0007_first_signup_is_owner",
+      "breakpoints": true
     }
   ]
 }

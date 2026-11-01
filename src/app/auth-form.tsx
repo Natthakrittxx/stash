@@ -66,6 +66,7 @@ export function AuthForm({
   google,
   oauthError,
   initialInvite = "",
+  firstAccount = false,
 }: {
   mode: "login" | "signup";
   google: boolean;
@@ -73,6 +74,8 @@ export function AuthForm({
   oauthError?: string;
   // `?invite=` from an invite link. Only fills the field; signup still checks it.
   initialInvite?: string;
+  // No accounts yet, so this one needs no invite code and becomes the Owner.
+  firstAccount?: boolean;
 }) {
   const [error, setError] = useState<AuthError | null>(
     oauthError ? explain({ code: oauthError.toUpperCase() }) : null,
@@ -195,9 +198,11 @@ export function AuthForm({
         {isSignup ? "Start a stash" : "Open your stash"}
       </h1>
       <p className="text-body text-muted mt-1">
-        {isSignup
-          ? "A quiet place to save things and find them again."
-          : "Welcome back."}
+        {firstAccount
+          ? "This first account becomes the Owner of this stash."
+          : isSignup
+            ? "A quiet place to save things and find them again."
+            : "Welcome back."}
       </p>
 
       {error && (
@@ -218,7 +223,8 @@ export function AuthForm({
         </p>
       )}
       <form onSubmit={onEmail} className="mt-8 flex flex-col gap-3">
-        {isSignup && (
+        {/* Someone else may have got there first while this page sat open. */}
+        {isSignup && (!firstAccount || error?.field === "invite") && (
           <label className="text-label text-muted flex flex-col gap-1">
             Invite code
             <input
@@ -229,11 +235,9 @@ export function AuthForm({
               value={invite}
               onChange={(event) => setInvite(event.target.value)}
               aria-invalid={error?.field === "invite" || undefined}
-              aria-describedby={
-                ["invite-hint", error && "auth-error"]
-                  .filter(Boolean)
-                  .join(" ")
-              }
+              aria-describedby={["invite-hint", error && "auth-error"]
+                .filter(Boolean)
+                .join(" ")}
               className={`border-field bg-bg text-body text-ink rounded border px-3 py-2 font-mono transition-colors duration-150 ${fieldFocus}`}
             />
             <span id="invite-hint">Ask whoever runs this stash.</span>

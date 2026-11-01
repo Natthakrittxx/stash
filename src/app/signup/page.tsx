@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AuthForm } from "~/app/auth-form";
 import { env } from "~/env";
 import { getSession } from "~/server/better-auth/server";
+import { instanceIsEmpty } from "~/server/instance";
 
 export const metadata: Metadata = { title: "Sign up" };
 
@@ -19,6 +20,7 @@ export default async function SignupPage({
       mode="signup"
       google={!!env.GOOGLE_CLIENT_ID}
       oauthError={error}
+      firstAccount={await instanceIsEmpty()}
       // A repeated ?invite= arrives as an array.
       initialInvite={typeof invite === "string" ? invite : undefined}
     />

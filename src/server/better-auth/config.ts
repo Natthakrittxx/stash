@@ -10,6 +10,7 @@ import { env } from "~/env";
 import { INVITE_COOKIE } from "~/invite";
 import { db } from "~/server/db";
 import { inviteCodes } from "~/server/db/schema";
+import { instanceIsEmpty } from "~/server/instance";
 
 import {
   confirmPassword,
@@ -29,6 +30,7 @@ const inviteGate = {
       {
         matcher: (context) => context.path === "/sign-up/email",
         handler: createAuthMiddleware(async (ctx) => {
+          if (await instanceIsEmpty()) return;
           const code = ctx.getCookie(INVITE_COOKIE);
           const [invite] = code
             ? await db
@@ -69,16 +71,22 @@ export const auth = betterAuth({
     user: {
       create: {
         // The one admission check: password and Google signup both create a
-        // user through here. better-auth rejects an email already in use before
-        // calling this, so that failure can't use up a code. The delete is the
-        // atomic step: of two people submitting one code, only one gets the row.
+        // user through here. The first account on an instance needs no code and
+        // becomes the Owner; if two people race to be first, the user_one_owner
+        // index lets only one of them in. After that, better-auth rejects an email
+        // already in use before calling this, so that failure can't use up a code.
+        // The delete is the atomic step: of two people submitting one code, only
+        // one gets the row.
         before: async (newUser, ctx) => {
+          if (await instanceIsEmpty()) {
+            return { data: { ...newUser, isOwner: true } };
+          }
           const code = ctx?.getCookie(INVITE_COOKIE);
           const [invite] = code
             ? await db
                 .delete(inviteCodes)
                 .where(eq(inviteCodes.code, code))
-                .returning({ isSetup: inviteCodes.isSetup })
+                .returning({ code: inviteCodes.code })
             : [];
           if (!invite) {
             // Google's callback turns the message into `?error=invite_required`.
@@ -87,7 +95,7 @@ export const auth = betterAuth({
               message: "invite_required",
             });
           }
-          return { data: { ...newUser, isOwner: invite.isSetup } };
+          return { data: { ...newUser, isOwner: false } };
         },
       },
     },
