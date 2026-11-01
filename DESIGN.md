@@ -307,6 +307,7 @@ Small, quiet corners. Controls, inputs, tiles, the composer, and toasts share a 
 - **Scale and attribution:** a metric scale at bottom left and text attribution at bottom right (the words, never the "i" button), both muted label-size text on a translucent bg.
 - **Set location:** a bg banner at top left with a hairline and the toast float shadow, announced as a status: "Click (Tap on touch) the map where “X” is, or move it under the cross and press Enter.", with a teal underlined "Pin here" and a quiet Cancel. An ink cross marks the map's centre, the cursor becomes a crosshair, and the map takes focus so the arrow keys pan it; Enter or "Pin here" pins at the cross, Esc cancels. No other pin stays teal meanwhile.
 - **Tile failure:** a muted label-size line on the map ("Map tiles didn't load. Your places are still listed."); the index keeps working.
+- **No WebGL2:** the same muted line ("This browser can't draw the map. Your places are still listed."), with no zoom buttons. The index keeps working; Set location offers only Cancel.
 - **Motion:** fits and the ease to an off-screen selection take 600ms at most, zoom 250ms; all jump under reduced motion. The zoom buttons zoom about the selected pin while it is on screen, so it stays put.
 - **Honest narrowing:** any refit (a search, tag, collection, Show all, Near me) drops the visitor's own view, and a place's card closes once the place leaves the view, so the index, its status line and the card never disagree with the map.
 
