@@ -269,6 +269,17 @@ describe("a fresh instance", () => {
     expect(results.map((r) => r.status).sort()).toEqual([200, 403, 403, 403]);
   });
 
+  test("an invite link fills in the code at signup, without using it", async () => {
+    await submit(createAction, owner);
+    const [code] = (await invitesPage(owner)).codes;
+    const link = `/signup?invite=${code}`;
+    expect(await (await get("/invites", owner)).text()).toContain(`${BASE}${link}`);
+    expect(await (await get(link)).text()).toContain(`value="${code}"`);
+    expect((await invitesPage(owner)).codes).toEqual([code!]);
+    expect((await get("/signup?invite=a&invite=b")).status).toBe(200);
+    await submit(revokeAction, owner, { code: code! });
+  });
+
   test("the invites page doesn't exist for anyone but the Owner", async () => {
     expect((await get("/invites", member)).status).toBe(404);
     expect((await get("/invites")).status).toBe(404);

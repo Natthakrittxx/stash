@@ -57,17 +57,20 @@ export function AuthForm({
   mode,
   google,
   oauthError,
+  initialInvite = "",
 }: {
   mode: "login" | "signup";
   google: boolean;
   // `?error=` from a Google sign-in that came back refused.
   oauthError?: string;
+  // `?invite=` from an invite link. Only fills the field; signup still checks it.
+  initialInvite?: string;
 }) {
   const [error, setError] = useState<AuthError | null>(
     oauthError ? explain({ code: oauthError.toUpperCase() }) : null,
   );
   const [pending, setPending] = useState(false);
-  const [invite, setInvite] = useState("");
+  const [invite, setInvite] = useState(initialInvite);
 
   const isSignup = mode === "signup";
 

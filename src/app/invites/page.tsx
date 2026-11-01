@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { CopyButton } from "~/app/copy-button";
 import { StashMark } from "~/app/stash-mark";
 import { focusRing, touch } from "~/app/stash/ui";
+import { env } from "~/env";
 import { getSession } from "~/server/better-auth/server";
 import { db } from "~/server/db";
 import { inviteCodes } from "~/server/db/schema";
@@ -13,6 +14,8 @@ import { inviteCodes } from "~/server/db/schema";
 import { createInvite, revokeInvite } from "./actions";
 
 export const metadata: Metadata = { title: "Invite codes" };
+
+const copyAction = `text-label focus-visible:outline-term-accent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`;
 
 export default async function InvitesPage() {
   const session = await getSession();
@@ -25,13 +28,22 @@ export default async function InvitesPage() {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-xl flex-col px-6 py-12">
-      <Link
-        href="/stash"
-        className={`text-title text-ink flex w-fit items-center gap-2 rounded font-serif leading-none ${focusRing}`}
-      >
-        <StashMark className="size-[1.1em] rounded-[2px]" />
-        Stash
-      </Link>
+      <header className="flex items-center justify-between gap-4">
+        <Link
+          href="/stash"
+          className={`text-title text-ink flex w-fit items-center gap-2 rounded font-serif leading-none ${focusRing}`}
+        >
+          <StashMark className="size-[1.1em] rounded-[2px]" />
+          Stash
+        </Link>
+        <Link
+          href="/stash"
+          className={`text-label text-muted hover:text-ink inline-flex shrink-0 items-center gap-1 rounded px-1 font-medium ${touch} ${focusRing}`}
+        >
+          <span aria-hidden="true">←</span>
+          Back to stash
+        </Link>
+      </header>
       <h1 className="text-headline text-ink mt-2 font-serif">Invite codes</h1>
       <p className="text-body text-muted mt-1">
         Each code lets one person start a stash here. It stops working once
@@ -54,15 +66,23 @@ export default async function InvitesPage() {
           {codes.map(({ code }) => (
             <li
               key={code}
-              className="bg-term-bg flex items-center gap-2 rounded px-3 py-2"
+              className="bg-term-bg flex flex-wrap items-center gap-2 rounded px-3 py-2"
             >
-              <code className="text-body text-term-ink min-w-0 flex-1 font-mono break-all">
+              <code className="text-body text-term-ink min-w-0 flex-1 font-mono break-all max-sm:basis-full">
                 {code}
               </code>
               <CopyButton
+                text={
+                  new URL(`/signup?invite=${code}`, env.BETTER_AUTH_URL).href
+                }
+                label="Copy link"
+                word="Copy link"
+                className={copyAction}
+              />
+              <CopyButton
                 text={code}
                 label="Copy invite code"
-                className={`text-label focus-visible:outline-term-accent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
+                className={copyAction}
               />
               <form action={revokeInvite} className="flex shrink-0">
                 <input type="hidden" name="code" value={code} />

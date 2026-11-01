@@ -14,7 +14,7 @@ docker compose up -d
 docker compose logs app | grep "Setup code"
 ```
 
-Open <http://localhost:3000/signup> and enter the setup code. That account becomes the **Owner** of this instance. From then on, signup needs an invite code, which the Owner creates under **Invites** in the header.
+Open <http://localhost:3000/signup> and enter the setup code. That account becomes the **Owner** of this instance. From then on, signup needs an invite code, which the Owner creates under **Invites** in the header and can share as the code or as a signup link with the code filled in.
 
 ## Configuration
 
