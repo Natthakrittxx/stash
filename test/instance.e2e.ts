@@ -10,6 +10,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
+import { base32 } from "@better-auth/utils/base32";
+import { createOTP } from "@better-auth/utils/otp";
+
 const BASE = "http://localhost:3999";
 const MINUTES = 60_000;
 
@@ -74,8 +77,8 @@ async function freshDatabase() {
   await compose("up", "-d", "--wait", "db");
 }
 
-const setupCodes = async () =>
-  [...(await logs()).matchAll(/Setup code: (\S+)/g)].map((m) => m[1]!);
+const ownerNotices = async () =>
+  (await logs()).match(/becomes the Owner/g)?.length ?? 0;
 
 // Each request looks like a new visitor, or better-auth's sign-in rate limit
 // (3 per 10s per address) would decide these tests instead of the code under test.
@@ -163,7 +166,7 @@ afterAll(async () => {
 }, 2 * MINUTES);
 
 describe("a fresh instance", () => {
-  let setupCode = "";
+  let ownerEmail = "";
   let owner = "";
   let member = "";
   let createAction = "";
@@ -188,45 +191,45 @@ describe("a fresh instance", () => {
     expect(found.trim()).toBe("");
   });
 
-  test("prints one setup code, at least 128 bits long", async () => {
-    const codes = await setupCodes();
-    expect(codes.length).toBe(1);
-    setupCode = codes[0]!;
-    expect(setupCode.length).toBeGreaterThanOrEqual(22);
-  });
-
-  test("refuses signup with no code or a wrong code", async () => {
-    for (const res of [await signUp("a@example.com"), await signUp("a@example.com", "wrong")]) {
-      expect(res.status).toBe(403);
-      expect(((await res.json()) as { code: string }).code).toBe("INVITE_REQUIRED");
-    }
-  });
-
-  test("reprints the same setup code on restart until it is redeemed", async () => {
+  test("says on every boot that the first signup becomes the Owner", async () => {
+    expect(await ownerNotices()).toBe(1);
     await compose("restart", "app");
     await waitForApp();
-    const codes = await setupCodes();
-    expect(codes.length).toBe(2);
-    expect(codes[1]).toBe(setupCode);
+    expect(await ownerNotices()).toBe(2);
   }, 3 * MINUTES);
 
-  test("redeeming the setup code creates the Owner", async () => {
-    const res = await signUp("owner@example.com", setupCode);
-    expect(res.status).toBe(200);
-    owner = sessionFrom(res);
+  test("the signup page asks the first person for no code", async () => {
+    const html = await (await get("/signup")).text();
+    expect(html).not.toContain('name="invite"');
+    expect(html).toContain("becomes the Owner");
+  });
+
+  test("the first signup needs no code and becomes the Owner, even in a race", async () => {
+    const emails = ["a", "b", "c", "d", "e"].map((name) => `${name}@example.com`);
+    const results = await Promise.all(emails.map((email) => signUp(email)));
+    const won = results.filter((res) => res.status === 200);
+    expect(won.length).toBe(1);
+    expect((await psql(`select count(*), count(*) filter (where is_owner) from "user"`)).trim()).toBe("1|1");
+
+    ownerEmail = emails[results.indexOf(won[0]!)]!;
+    owner = sessionFrom(won[0]!);
     expect((await get("/invites", owner)).status).toBe(200);
   });
 
-  test("the setup code works only once", async () => {
-    expect((await signUp("late@example.com", setupCode)).status).toBe(403);
+  test("after that, signup refuses no code or a wrong code", async () => {
+    for (const res of [await signUp("late@example.com"), await signUp("late@example.com", "wrong")]) {
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { code: string }).code).toBe("INVITE_REQUIRED");
+    }
+    expect(await (await get("/signup")).text()).toContain('name="invite"');
   });
 
-  test("no setup code appears once an account exists, and sessions survive recreating the container", async () => {
+  test("the notice stops once an account exists, and sessions survive recreating the container", async () => {
     await compose("up", "-d", "--force-recreate", "--no-deps", "app");
     await waitForApp();
-    // Recreating replaces the logs, so any setup code here would be a new one.
-    expect(await setupCodes()).toEqual([]);
-    expect(await currentUser(owner)).toBe("owner@example.com");
+    // Recreating replaces the logs, so any notice here would be a new one.
+    expect(await ownerNotices()).toBe(0);
+    expect(await currentUser(owner)).toBe(ownerEmail);
   }, 3 * MINUTES);
 
   test("the Owner creates a code that admits one person", async () => {
@@ -321,7 +324,7 @@ describe("a fresh instance", () => {
   });
 
   test("pages render, despite the build having no secret to prerender with", async () => {
-    for (const path of ["/", "/login", "/signup"]) {
+    for (const path of ["/", "/login", "/signup", "/two-factor"]) {
       expect([path, (await get(path)).status]).toEqual([path, 200]);
     }
   });
@@ -346,6 +349,130 @@ describe("a fresh instance", () => {
     const reset = await resetPassword("Google@Example.com");
     expect(reset.code).toBe(0);
     expect((await signIn("google@example.com", newPassword(reset.stdout))).status).toBe(200);
+  });
+
+  test("a second factor holds at sign-in until the reset command clears it", async () => {
+    await submit(createAction, owner);
+    const [invite] = (await invitesPage(owner)).codes;
+    const session = sessionFrom(await signUp("factor@example.com", invite));
+
+    const enable = await post(
+      "/api/auth/two-factor/enable",
+      { password: "correct-horse" },
+      session,
+    );
+    expect(enable.status).toBe(200);
+    const { totpURI } = (await enable.json()) as { totpURI: string };
+    const secret = new TextDecoder().decode(
+      base32.decode(new URL(totpURI).searchParams.get("secret")!),
+    );
+    const code = () => createOTP(secret, { digits: 6, period: 30 }).totp();
+    const verified = await post(
+      "/api/auth/two-factor/verify-totp",
+      { code: await code() },
+      session,
+    );
+    expect(verified.status).toBe(200);
+    const current = sessionFrom(verified);
+
+    const held = await signIn("factor@example.com");
+    expect(((await held.json()) as { twoFactorRedirect?: boolean }).twoFactorRedirect).toBe(true);
+
+    const reset = await run([
+      "exec",
+      "-T",
+      "app",
+      "node",
+      "reset-second-factor.mjs",
+      "Factor@Example.com",
+    ]);
+    expect(reset.code).toBe(0);
+    expect(await currentUser(current)).toBeNull();
+    const after = await signIn("factor@example.com");
+    expect(after.status).toBe(200);
+    expect(await currentUser(sessionFrom(after))).toBe("factor@example.com");
+  });
+
+  test("the second factor reset fails clearly on an unknown email", async () => {
+    const reset = await run([
+      "exec",
+      "-T",
+      "app",
+      "node",
+      "reset-second-factor.mjs",
+      "nobody@example.com",
+    ]);
+    expect(reset.code).not.toBe(0);
+    expect(reset.stderr).toContain("No account for nobody@example.com");
+  });
+
+  test("adding a passkey needs the password confirmed first", async () => {
+    const options = "/api/auth/passkey/generate-register-options";
+    expect((await get(options, owner)).status).toBe(403);
+    const wrong = await post("/api/auth/confirm-password", { password: "wrong" }, owner);
+    expect(wrong.status).toBe(400);
+
+    const right = await post("/api/auth/confirm-password", { password: "correct-horse" }, owner);
+    expect(right.status).toBe(200);
+    const proof = right.headers.getSetCookie().map((cookie) => cookie.split(";")[0]).join("; ");
+    expect((await get(options, `${owner}; ${proof}`)).status).toBe(200);
+  });
+
+  test("settings are for signed-in people", async () => {
+    expect((await get("/settings", owner)).status).toBe(200);
+    const res = await get("/settings");
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/login");
+  });
+
+  test("without a working invite, sign-up doesn't reveal which emails have accounts", async () => {
+    await psql(`
+      insert into "user" (id, name, email, email_verified, created_at, updated_at)
+        values ('oracle', 'o', 'taken@example.com', false, now(), now())
+        on conflict do nothing;`);
+    for (const code of [undefined, "not-a-real-code"]) {
+      const taken = await signUp("taken@example.com", code);
+      const free = await signUp("free@example.com", code);
+      expect([taken.status, free.status]).toEqual([403, 403]);
+      const bodies = (await Promise.all([taken.json(), free.json()])) as { code: string }[];
+      expect(bodies.map((b) => b.code)).toEqual(["INVITE_REQUIRED", "INVITE_REQUIRED"]);
+    }
+  });
+
+  test("the reset command clears unfinished second factor setup and pending sign-ins", async () => {
+    await psql(`
+      insert into "user" (id, name, email, email_verified, created_at, updated_at)
+        values ('r1', 'r', 'reset-me@example.com', false, now(), now());
+      insert into two_factor (id, secret, backup_codes, user_id, verified)
+        values ('tf1', 's', 'b', 'r1', false);
+      insert into verification (id, identifier, value, expires_at)
+        values ('v1', '2fa-pending', 'r1', now() + interval '5 minutes'),
+               ('v2', 'unrelated', 'r1', now() + interval '5 minutes');`);
+    expect((await resetPassword("reset-me@example.com")).code).toBe(0);
+    expect(await psql("select count(*) from two_factor where user_id = 'r1'")).toBe("0");
+    expect(await psql("select identifier from verification where value = 'r1'")).toBe("unrelated");
+
+    await psql(`insert into two_factor (id, secret, backup_codes, user_id, verified)
+      values ('tf2', 's', 'b', 'r1', true);`);
+    expect((await resetPassword("reset-me@example.com")).code).toBe(0);
+    expect(await psql("select count(*) from two_factor where user_id = 'r1'")).toBe("1");
+  });
+
+  test("the fetch budget holds on real Postgres, under concurrency too", async () => {
+    await psql(`
+      insert into "user" (id, name, email, email_verified, created_at, updated_at)
+        values ('f1', 'f', 'budget@example.com', false, now(), now());`);
+    const spend = () => psql("select spend_fetch('f1', 3)");
+    const results = await Promise.all([spend(), spend(), spend(), spend(), spend()]);
+    expect(results.filter((r) => r === "t").length).toBe(3);
+    expect(await spend()).toBe("f");
+
+    await psql("update fetch_budget set window_start = now() - interval '61 minutes' where user_id = 'f1'");
+    expect(await spend()).toBe("t");
+    expect(await psql("select used from fetch_budget where user_id = 'f1'")).toBe("1");
+
+    await psql(`delete from "user" where id = 'f1'`);
+    expect(await psql("select count(*) from fetch_budget")).toBe("0");
   });
 
   test("the reset command fails clearly on an unknown email", async () => {
@@ -438,8 +565,8 @@ describe("upgrading an instance that already has accounts", () => {
     await waitForApp();
   }, 5 * MINUTES);
 
-  test("creates no setup code", async () => {
-    expect(await setupCodes()).toEqual([]);
+  test("doesn't offer the Owner role to the next signup", async () => {
+    expect(await ownerNotices()).toBe(0);
     expect(await psql("select count(*) from invite_code")).toBe("0");
   });
 

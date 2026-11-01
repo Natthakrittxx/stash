@@ -2,13 +2,53 @@ import "server-only";
 
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
+import { type BetterAuthPlugin } from "better-auth";
 import { eq } from "drizzle-orm";
 
 import { env } from "~/env";
 import { INVITE_COOKIE } from "~/invite";
 import { db } from "~/server/db";
 import { inviteCodes } from "~/server/db/schema";
+import { instanceIsEmpty } from "~/server/instance";
+
+import {
+  confirmPassword,
+  securityHooks,
+  securityPasskey,
+  secondFactor,
+} from "./security";
+
+// Without this, better-auth's check for an existing email answers first, telling
+// anyone whether an address has an account. Read-only: the atomic delete in the
+// user hook below stays the real admission step, and an invite holder can still
+// see that an email is taken.
+const inviteGate = {
+  id: "invite-gate",
+  hooks: {
+    before: [
+      {
+        matcher: (context) => context.path === "/sign-up/email",
+        handler: createAuthMiddleware(async (ctx) => {
+          if (await instanceIsEmpty()) return;
+          const code = ctx.getCookie(INVITE_COOKIE);
+          const [invite] = code
+            ? await db
+                .select({ code: inviteCodes.code })
+                .from(inviteCodes)
+                .where(eq(inviteCodes.code, code))
+            : [];
+          if (!invite) {
+            throw new APIError("FORBIDDEN", {
+              code: "INVITE_REQUIRED",
+              message: "invite_required",
+            });
+          }
+        }),
+      },
+    ],
+  },
+} satisfies BetterAuthPlugin;
 
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
@@ -31,16 +71,22 @@ export const auth = betterAuth({
     user: {
       create: {
         // The one admission check: password and Google signup both create a
-        // user through here. better-auth rejects an email already in use before
-        // calling this, so that failure can't use up a code. The delete is the
-        // atomic step: of two people submitting one code, only one gets the row.
+        // user through here. The first account on an instance needs no code and
+        // becomes the Owner; if two people race to be first, the user_one_owner
+        // index lets only one of them in. After that, better-auth rejects an email
+        // already in use before calling this, so that failure can't use up a code.
+        // The delete is the atomic step: of two people submitting one code, only
+        // one gets the row.
         before: async (newUser, ctx) => {
+          if (await instanceIsEmpty()) {
+            return { data: { ...newUser, isOwner: true } };
+          }
           const code = ctx?.getCookie(INVITE_COOKIE);
           const [invite] = code
             ? await db
                 .delete(inviteCodes)
                 .where(eq(inviteCodes.code, code))
-                .returning({ isSetup: inviteCodes.isSetup })
+                .returning({ code: inviteCodes.code })
             : [];
           if (!invite) {
             // Google's callback turns the message into `?error=invite_required`.
@@ -49,7 +95,7 @@ export const auth = betterAuth({
               message: "invite_required",
             });
           }
-          return { data: { ...newUser, isOwner: invite.isSetup } };
+          return { data: { ...newUser, isOwner: false } };
         },
       },
     },
@@ -58,6 +104,13 @@ export const auth = betterAuth({
   // cache answers that without a DB round trip; a revoked session can outlive
   // its revocation by up to this maxAge. Sign out clears the cookie at once.
   session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
+  plugins: [
+    inviteGate,
+    secondFactor,
+    securityPasskey(env.BETTER_AUTH_URL),
+    confirmPassword,
+  ],
+  hooks: securityHooks,
   socialProviders:
     env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
       ? {

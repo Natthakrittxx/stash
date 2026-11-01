@@ -17,7 +17,7 @@ RUN rm -rf .next/standalone/node_modules/sharp .next/standalone/node_modules/@im
 # Standalone output only traces what the server imports, so these are bundled.
 # Without the define, bun inlines NODE_ENV as "development" and env.js would allow
 # its localhost database default in production.
-RUN bun build scripts/bootstrap.ts scripts/reset-password.ts --target=node --outdir=bundled --entry-naming='[name].mjs' --define 'process.env.NODE_ENV="production"'
+RUN bun build scripts/bootstrap.ts scripts/reset-password.ts scripts/reset-second-factor.ts --target=node --outdir=bundled --entry-naming='[name].mjs' --define 'process.env.NODE_ENV="production"'
 
 FROM node:24-alpine
 WORKDIR /app

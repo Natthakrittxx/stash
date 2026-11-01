@@ -11,10 +11,9 @@ You need Docker with Compose.
 ```sh
 curl -O https://raw.githubusercontent.com/Natthakrittxx/stash/main/compose.yml
 docker compose up -d
-docker compose logs app | grep "Setup code"
 ```
 
-Open <http://localhost:3000/signup> and enter the setup code. That account becomes the **Owner** of this instance. From then on, signup needs an invite code, which the Owner creates under **Invites** in the header and can share as the code or as a signup link with the code filled in.
+Open <http://localhost:3000/signup> and sign up. The first person to do so becomes the **Owner** of this instance, with no code needed, so do it before anyone else can reach the address. From then on, signup needs an invite code, which the Owner creates under **Invites** in the header and can share as the code or as a signup link with the code filled in.
 
 ## Configuration
 
@@ -71,6 +70,20 @@ docker compose exec app node reset-password.mjs someone@example.com
 
 It prints a new password to pass on, and ends that account's existing sessions. An open browser tab can stay signed in for up to 5 more minutes. This also gives an account that only used Google a password login.
 
+## Lost authenticators
+
+People can turn on an authenticator app and passkeys under **Settings**. If someone loses both their authenticator and their backup codes, clear their second factor:
+
+```sh
+docker compose exec app node reset-second-factor.mjs someone@example.com
+```
+
+It ends that account's existing sessions, and they can sign in without a code until they set it up again. An open browser tab can stay signed in for up to 5 more minutes. It doesn't change their password or passkeys.
+
+Authenticator secrets are encrypted with the instance's auth secret. If you lose or replace that secret, everyone with an authenticator app turned on is locked out until you run this command for them.
+
+Passkeys are tied to the instance's domain and only work over HTTPS or on `localhost`. If `BETTER_AUTH_URL` moves to another domain, expect people to need new passkeys. Passwords and Google login still work.
+
 ## What leaves your instance
 
 - **Map views:** browsers fetch map tiles from [OpenFreeMap](https://openfreemap.org), which sees the area being viewed. Saved places themselves aren't sent.
@@ -84,7 +97,7 @@ You need [Bun](https://bun.sh) and Docker.
 ```sh
 bun install
 docker compose -f compose.dev.yml up -d --wait
-bun run bootstrap   # applies migrations and prints a setup code
+bun run bootstrap   # applies migrations
 bun dev
 ```
 

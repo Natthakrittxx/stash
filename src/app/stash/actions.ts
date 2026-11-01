@@ -6,9 +6,11 @@ import { after } from "next/server";
 import { z } from "zod";
 
 import { text, titleOr } from "~/form";
+import { isMapsLink } from "~/maps";
 import { getSession } from "~/server/better-auth/server";
 import { db } from "~/server/db";
 import { collectionItems, collections, items } from "~/server/db/schema";
+import { spendFetch } from "~/server/fetch-budget";
 import { fetchPreview } from "~/server/og";
 import { resolvePlace } from "~/server/place";
 import { normalizeUrl } from "~/server/url";
@@ -118,8 +120,16 @@ function toRow(data: z.infer<typeof itemSchema>) {
 
 // A place's pin, address and image come from its link; its title too when left
 // blank, since the link's host ("maps.app.goo.gl") names nothing.
-async function placeRow(data: z.infer<typeof itemSchema>, url: string) {
-  const place = await resolvePlace(url);
+async function placeRow(
+  data: z.infer<typeof itemSchema>,
+  url: string,
+  userId: string,
+) {
+  // Only a maps link gets fetched, so only one spends. Past the budget, the link
+  // itself can still carry the pin and name.
+  const place = await resolvePlace(url, {
+    offline: isMapsLink(url) && !(await spendFetch(userId)),
+  });
   return {
     ...(data.title ? {} : place.name ? { title: place.name } : {}),
     lat: place.lat,
@@ -144,6 +154,7 @@ function resolvePreview(
   // Only backfill a description the user left blank — never clobber their words.
   const wantsDescription = row.description.length === 0;
   after(async () => {
+    if (!(await spendFetch(userId))) return;
     const { image, description } = await fetchPreview(url);
     const patch: { image?: string; description?: string } = {};
     if (image) patch.image = image;
@@ -193,7 +204,7 @@ export async function createItem(formData: FormData): Promise<Result> {
   // preview: the map needs its pin the moment it lands.
   const place =
     row.kind === "place" && row.url
-      ? { ...(await placeRow(parsed.data, row.url)), ...pinFrom(formData) }
+      ? { ...(await placeRow(parsed.data, row.url, userId)), ...pinFrom(formData) }
       : {};
   const [inserted] = await db
     .insert(items)
@@ -257,7 +268,7 @@ export async function updateItem(
     set =
       current.kind === "place" && current.url === row.url
         ? { ...row, title: parsed.data.title || current.title }
-        : { ...row, ...(await placeRow(parsed.data, row.url)) };
+        : { ...row, ...(await placeRow(parsed.data, row.url, userId)) };
   }
   const updated = await db
     .update(items)
@@ -267,8 +278,7 @@ export async function updateItem(
 
   // A miss means the id was someone else's or nothing at all. Without this gate
   // the fetch below still ran, so any signed-in account owning no items could
-  // loop this action to make the server fetch arbitrary URLs, at no rate limit —
-  // only createItem counts against ITEMS_PER_HOUR.
+  // loop this action to make the server fetch arbitrary URLs.
   if (updated.length === 0) return { error: "No such item." };
 
   revalidatePath("/stash");

@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { INVITE_COOKIE } from "~/invite";
 import { authClient } from "~/server/better-auth/client";
 
 import { StashMark } from "./stash-mark";
 import { ThemeToggle } from "./theme-toggle";
-import { fieldFocus } from "./stash/ui";
+import { fieldFocus, touch } from "./stash/ui";
 
 // A name is required at signup; derive it from the email so the form stays to
 // two fields. Editable later if display names ever matter.
@@ -48,16 +48,25 @@ function explain(error: { code?: string; message?: string }): AuthError {
       return { message: "That email doesn't look right.", field: "email" };
     case "PASSWORD_TOO_SHORT":
       return { message: "Use at least 8 characters.", field: "password" };
+    case "USER_VERIFICATION_REQUIRED":
+      return {
+        message:
+          "That passkey has to ask for a fingerprint, face or PIN. Set one up on the device, or log in another way.",
+      };
     default:
       return { message: error.message ?? "That didn't work. Try again." };
   }
 }
+
+const codeOf = (error: { code?: string } | object) =>
+  "code" in error ? error.code : undefined;
 
 export function AuthForm({
   mode,
   google,
   oauthError,
   initialInvite = "",
+  firstAccount = false,
 }: {
   mode: "login" | "signup";
   google: boolean;
@@ -65,6 +74,8 @@ export function AuthForm({
   oauthError?: string;
   // `?invite=` from an invite link. Only fills the field; signup still checks it.
   initialInvite?: string;
+  // No accounts yet, so this one needs no invite code and becomes the Owner.
+  firstAccount?: boolean;
 }) {
   const [error, setError] = useState<AuthError | null>(
     oauthError ? explain({ code: oauthError.toUpperCase() }) : null,
@@ -72,7 +83,28 @@ export function AuthForm({
   const [pending, setPending] = useState(false);
   const [invite, setInvite] = useState(initialInvite);
 
+  // Set after mount: the server can't know, and browsers don't offer passkeys on
+  // plain-HTTP addresses other than localhost.
+  const [passkeysSupported, setPasskeysSupported] = useState(false);
+
   const isSignup = mode === "signup";
+
+  useEffect(() => {
+    if (isSignup || !window.PublicKeyCredential) return;
+    setPasskeysSupported(true);
+    // Autofill offers saved passkeys on the fields below and waits for a pick.
+    void PublicKeyCredential.isConditionalMediationAvailable?.().then(
+      async (available) => {
+        if (!available) return;
+        const { error } = await authClient.signIn.passkey({ autoFill: true });
+        if (!error) window.location.assign("/stash");
+        // Anything else means no pick was made: the form is still there to use.
+        else if (codeOf(error) === "USER_VERIFICATION_REQUIRED") {
+          setError(explain(error));
+        }
+      },
+    );
+  }, [isSignup]);
 
   // onSubmit, not <form action>: React resets an action form once it settles,
   // which would wipe the email and password on every failed attempt.
@@ -86,7 +118,7 @@ export function AuthForm({
     const password = formData.get("password") as string;
     if (isSignup) rememberInvite(invite);
     // Signup signs in straight away; there is no verification step.
-    const { error } = isSignup
+    const { data, error } = isSignup
       ? await authClient.signUp.email({
           email,
           password,
@@ -97,6 +129,10 @@ export function AuthForm({
     if (error) {
       setPending(false);
       setError(explain(error));
+      return;
+    }
+    if (data && "twoFactorRedirect" in data && data.twoFactorRedirect) {
+      window.location.assign("/two-factor");
       return;
     }
     // Email auth sets the session cookie in place (no provider redirect), so send
@@ -126,6 +162,25 @@ export function AuthForm({
     // On success the browser redirects to Google; no navigation needed here.
   }
 
+  async function onPasskey() {
+    setError(null);
+    setPending(true);
+    const { error } = await authClient.signIn.passkey();
+    if (!error) {
+      window.location.assign("/stash");
+      return;
+    }
+    setPending(false);
+    const code = codeOf(error);
+    if (code === "USER_VERIFICATION_REQUIRED") setError(explain(error));
+    // Closing the browser's prompt comes back as an error too. Not worth a message.
+    else if (code !== "AUTH_CANCELLED" && code !== "ERROR_CEREMONY_ABORTED") {
+      setError({
+        message: "That passkey didn't work. Try again, or log in another way.",
+      });
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6 py-12">
       <div className="fixed top-4 right-4">
@@ -143,9 +198,11 @@ export function AuthForm({
         {isSignup ? "Start a stash" : "Open your stash"}
       </h1>
       <p className="text-body text-muted mt-1">
-        {isSignup
-          ? "A quiet place to save things and find them again."
-          : "Welcome back."}
+        {firstAccount
+          ? "This first account becomes the Owner of this stash."
+          : isSignup
+            ? "A quiet place to save things and find them again."
+            : "Welcome back."}
       </p>
 
       {error && (
@@ -166,7 +223,8 @@ export function AuthForm({
         </p>
       )}
       <form onSubmit={onEmail} className="mt-8 flex flex-col gap-3">
-        {isSignup && (
+        {/* Someone else may have got there first while this page sat open. */}
+        {isSignup && (!firstAccount || error?.field === "invite") && (
           <label className="text-label text-muted flex flex-col gap-1">
             Invite code
             <input
@@ -177,11 +235,9 @@ export function AuthForm({
               value={invite}
               onChange={(event) => setInvite(event.target.value)}
               aria-invalid={error?.field === "invite" || undefined}
-              aria-describedby={
-                ["invite-hint", error && "auth-error"]
-                  .filter(Boolean)
-                  .join(" ")
-              }
+              aria-describedby={["invite-hint", error && "auth-error"]
+                .filter(Boolean)
+                .join(" ")}
               className={`border-field bg-bg text-body text-ink rounded border px-3 py-2 font-mono transition-colors duration-150 ${fieldFocus}`}
             />
             <span id="invite-hint">Ask whoever runs this stash.</span>
@@ -193,7 +249,7 @@ export function AuthForm({
             name="email"
             type="email"
             required
-            autoComplete="email"
+            autoComplete={isSignup ? "email" : "email webauthn"}
             aria-invalid={error?.field === "email" || undefined}
             aria-describedby={error ? "auth-error" : undefined}
             className={`border-field bg-bg text-body text-ink rounded border px-3 py-2 transition-colors duration-150 ${fieldFocus}`}
@@ -206,7 +262,9 @@ export function AuthForm({
             type="password"
             required
             minLength={8}
-            autoComplete={isSignup ? "new-password" : "current-password"}
+            autoComplete={
+              isSignup ? "new-password" : "current-password webauthn"
+            }
             aria-invalid={error?.field === "password" || undefined}
             aria-describedby={
               [isSignup && "password-hint", error && "auth-error"]
@@ -238,20 +296,34 @@ export function AuthForm({
         </Link>
       </p>
 
+      {(google || passkeysSupported) && (
+        <div className="text-label text-muted mt-6 flex items-center gap-3">
+          <span className="bg-border h-px flex-1" />
+          or
+          <span className="bg-border h-px flex-1" />
+        </div>
+      )}
+
+      {passkeysSupported && (
+        <button
+          type="button"
+          onClick={onPasskey}
+          disabled={pending}
+          aria-busy={pending}
+          className={`border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent mt-6 flex items-center justify-center gap-2 rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60 ${touch}`}
+        >
+          {pending ? "One moment…" : "Log in with a passkey"}
+        </button>
+      )}
+
       {google && (
         <>
-          <div className="text-label text-muted mt-6 flex items-center gap-3">
-            <span className="bg-border h-px flex-1" />
-            or
-            <span className="bg-border h-px flex-1" />
-          </div>
-
           <button
             type="button"
             onClick={onGoogle}
             disabled={pending}
             aria-busy={pending}
-            className="border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent mt-6 flex items-center justify-center gap-2 rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60"
+            className={`border-border bg-bg text-body text-ink hover:border-accent hover:bg-surface focus-visible:outline-accent ${passkeysSupported ? "mt-3" : "mt-6"} flex items-center justify-center gap-2 rounded border px-4 py-2 transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-60`}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5">
               <path

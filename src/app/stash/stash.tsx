@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   useDeferredValue,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useOptimistic,
   useRef,
@@ -31,6 +30,7 @@ import type { items } from "~/server/db/schema";
 
 import { CopyButton } from "../copy-button";
 import { GitHubMark, REPO_URL } from "../github-mark";
+import { Modal } from "../modal";
 import { StashMark } from "../stash-mark";
 import { ThemeToggle } from "../theme-toggle";
 
@@ -991,6 +991,12 @@ export function Stash({
               Invites
             </Link>
           )}
+          <Link
+            href="/settings"
+            className={`text-label text-muted hover:text-ink inline-flex h-9 shrink-0 items-center rounded px-1 font-medium ${touch} ${focusRing}`}
+          >
+            Settings
+          </Link>
           <button
             type="button"
             disabled={signingOut}
@@ -1765,48 +1771,6 @@ function FilterRow({
         {count}
       </span>
     </button>
-  );
-}
-
-// The add/edit popup: a native modal <dialog>, so the browser traps focus,
-// makes the page behind it inert, and turns Esc into a close. Mounted once per
-// opening; a layout effect so it is open before the form's own effect puts the
-// cursor in the field.
-function Modal({
-  labelledBy,
-  onClose,
-  children,
-}: {
-  labelledBy: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  const ref = useRef<HTMLDialogElement>(null);
-  // Set on pointerdown, so a text selection dragged out of a field and
-  // released on the backdrop doesn't read as a backdrop click.
-  const downOnBackdrop = useRef(false);
-
-  useLayoutEffect(() => {
-    ref.current?.showModal();
-  }, []);
-
-  return (
-    <dialog
-      ref={ref}
-      aria-labelledby={labelledBy}
-      // Esc closes the dialog natively; this hands that close to React, which
-      // keeps the draft and returns focus. Unmounting fires no close event.
-      onClose={onClose}
-      onPointerDown={(e) => {
-        downOnBackdrop.current = e.target === e.currentTarget;
-      }}
-      onClick={(e) =>
-        downOnBackdrop.current && e.target === e.currentTarget && onClose()
-      }
-      className="bg-bg text-ink border-border mx-auto mt-[12vh] max-h-[80dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-lg border p-0 shadow-lg backdrop:bg-black/40"
-    >
-      {children}
-    </dialog>
   );
 }
 
