@@ -32,6 +32,10 @@ const SECOND_FACTOR_CHANGES = [
   "/two-factor/get-totp-uri",
 ];
 
+// These re-sign the cookie cache from the session they're given, so a revoked one
+// could otherwise keep itself alive until it expires, days later.
+const CACHE_RENEWERS = ["/update-user", "/update-session"];
+
 const PASSKEY_CHANGES = [
   "/passkey/generate-register-options",
   "/passkey/verify-registration",
@@ -114,6 +118,17 @@ async function challengeGoogleSignIn(ctx: AuthContext) {
   return ctx.json(result.response);
 }
 
+// Finishing setup swaps in a new session, which better-auth dates now. It proves no
+// sign-in, so it mustn't pass as a recent one.
+async function keepSessionAge(ctx: AuthContext) {
+  const previous = ctx.context.session?.session;
+  const current = ctx.context.newSession?.session;
+  if (!previous || !current || previous.token === current.token) return;
+  await ctx.context.internalAdapter.updateSession(current.token, {
+    createdAt: new Date(previous.createdAt),
+  });
+}
+
 // Someone turning this on may suspect a break-in, so it has to remove the intruder.
 async function signOutOtherBrowsers(ctx: AuthContext) {
   const current = ctx.context.newSession;
@@ -150,6 +165,27 @@ export const securityHooks = {
     if (PASSKEY_CHANGES.includes(ctx.path)) {
       requireRecentSignIn(await liveSession(ctx));
     }
+    if (CACHE_RENEWERS.includes(ctx.path)) await liveSession(ctx);
+    // With a session cookie, these confirm a setup or spend a code for that
+    // session, and confirming a setup creates a new one. A pending sign-in has no
+    // session cookie and proves itself with its code.
+    if (
+      ctx.path.startsWith("/two-factor/verify-") &&
+      (await ctx.getSignedCookie(
+        ctx.context.authCookies.sessionToken.name,
+        ctx.context.secret,
+      ))
+    ) {
+      await liveSession(ctx);
+    }
+    // Nothing in the app links an account, and a linked Google identity is a
+    // lasting way in, as a passkey is.
+    if (ctx.path === "/link-social") {
+      throw new APIError("FORBIDDEN", {
+        code: "LINKING_NOT_SUPPORTED",
+        message: "linking_not_supported",
+      });
+    }
     // Nothing in the app unlinks an account, and removing the password would turn
     // "confirm your password" into "signed in recently".
     if (ctx.path === "/unlink-account") {
@@ -177,6 +213,7 @@ export const securityHooks = {
       return challengeGoogleSignIn(ctx);
     }
     if (ctx.path === "/two-factor/verify-totp") {
+      await keepSessionAge(ctx);
       await signOutOtherBrowsers(ctx);
     }
   }),

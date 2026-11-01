@@ -469,3 +469,82 @@ test("a device can't be marked as trusted", async () => {
   expect(res.status).toBe(400);
   expect(browser.signedIn).toBe(false);
 });
+
+test("a revoked session can't renew its cookie cache through /update-user", async () => {
+  const { signUp, db } = instance();
+  const live = await signUp("on@example.com");
+  const ok = await live.post("/update-user", { name: "still-live" });
+  expect(ok.status).toBe(200);
+
+  db.session!.length = 0;
+  const renewed = await live.post("/update-user", { name: "revoked" });
+  expect(renewed.status).toBe(401);
+  expect(db.user![0]!.name).toBe("still-live");
+});
+
+test("a revoked session can't finish a pending second factor setup", async () => {
+  const { signUp, code, db } = instance();
+  const browser = await signUp("on@example.com");
+  const enable = await browser.post("/two-factor/enable", {
+    password: "correct-horse",
+  });
+  const { totpURI } = (await enable.json()) as { totpURI: string };
+  const secret = new TextDecoder().decode(
+    base32.decode(new URL(totpURI).searchParams.get("secret")!),
+  );
+
+  db.session!.length = 0;
+  const res = await browser.post("/two-factor/verify-totp", {
+    code: await code(secret),
+  });
+  expect(res.status).toBe(401);
+  expect(db.user![0]!.twoFactorEnabled).toBe(false);
+  expect(db.session!.length).toBe(0);
+});
+
+test("a revoked session can't spend a backup code", async () => {
+  const { signUp, turnOn, db } = instance();
+  const browser = await signUp("on@example.com");
+  const { backupCodes } = await turnOn(browser, "correct-horse");
+
+  db.session!.length = 0;
+  const res = await browser.post("/two-factor/verify-backup-code", {
+    code: backupCodes[0],
+  });
+  expect(res.status).toBe(401);
+});
+
+test("finishing second factor setup doesn't count as a recent sign-in", async () => {
+  const { signUp, code, ageSessions } = instance();
+  const browser = await signUp("on@example.com");
+  const enable = await browser.post("/two-factor/enable", {
+    password: "correct-horse",
+  });
+  const { totpURI } = (await enable.json()) as { totpURI: string };
+  const secret = new TextDecoder().decode(
+    base32.decode(new URL(totpURI).searchParams.get("secret")!),
+  );
+
+  ageSessions();
+  const res = await browser.post("/two-factor/verify-totp", {
+    code: await code(secret),
+  });
+  expect(res.status).toBe(200);
+  const passkey = await browser.post("/passkey/verify-registration", {
+    response: {},
+  });
+  expect(passkey.status).toBe(403);
+});
+
+test("an account can't be linked to another sign-in method", async () => {
+  const { signUp } = instance();
+  const browser = await signUp("on@example.com");
+  const res = await browser.post("/link-social", {
+    provider: "google",
+    callbackURL: "/stash",
+  });
+  expect(res.status).toBe(403);
+  expect(((await res.json()) as { code: string }).code).toBe(
+    "LINKING_NOT_SUPPORTED",
+  );
+});

@@ -26,7 +26,11 @@ if (!email || !url) {
 
 const password = randomBytes(18).toString("base64url");
 const hash = await hashPassword(password);
-const sql = postgres(url, { prepare: false, max: 1, onnotice: () => undefined });
+const sql = postgres(url, {
+  prepare: false,
+  max: 1,
+  onnotice: () => undefined,
+});
 
 try {
   const found = await sql.begin(async (tx) => {
@@ -44,6 +48,10 @@ try {
         values (${randomUUID()}, ${user.id}, 'credential', ${user.id}, ${hash}, now(), now())`;
     }
     await tx`delete from session where user_id = ${user.id}`;
+    // Whoever is being locked out may have started these with the old password: a
+    // second factor they never finished setting up, and sign-ins awaiting a code.
+    await tx`delete from two_factor where user_id = ${user.id} and verified = false`;
+    await tx`delete from verification where value = ${user.id} and identifier like '2fa-%'`;
     return true;
   });
 

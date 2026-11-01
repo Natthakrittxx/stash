@@ -2,7 +2,8 @@ import "server-only";
 
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
+import { type BetterAuthPlugin } from "better-auth";
 import { eq } from "drizzle-orm";
 
 import { env } from "~/env";
@@ -11,6 +12,36 @@ import { db } from "~/server/db";
 import { inviteCodes } from "~/server/db/schema";
 
 import { securityHooks, securityPasskey, secondFactor } from "./security";
+
+// Without this, better-auth's check for an existing email answers first, telling
+// anyone whether an address has an account. Read-only: the atomic delete in the
+// user hook below stays the real admission step, and an invite holder can still
+// see that an email is taken.
+const inviteGate = {
+  id: "invite-gate",
+  hooks: {
+    before: [
+      {
+        matcher: (context) => context.path === "/sign-up/email",
+        handler: createAuthMiddleware(async (ctx) => {
+          const code = ctx.getCookie(INVITE_COOKIE);
+          const [invite] = code
+            ? await db
+                .select({ code: inviteCodes.code })
+                .from(inviteCodes)
+                .where(eq(inviteCodes.code, code))
+            : [];
+          if (!invite) {
+            throw new APIError("FORBIDDEN", {
+              code: "INVITE_REQUIRED",
+              message: "invite_required",
+            });
+          }
+        }),
+      },
+    ],
+  },
+} satisfies BetterAuthPlugin;
 
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
@@ -60,7 +91,7 @@ export const auth = betterAuth({
   // cache answers that without a DB round trip; a revoked session can outlive
   // its revocation by up to this maxAge. Sign out clears the cookie at once.
   session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
-  plugins: [secondFactor, securityPasskey(env.BETTER_AUTH_URL)],
+  plugins: [inviteGate, secondFactor, securityPasskey(env.BETTER_AUTH_URL)],
   hooks: securityHooks,
   socialProviders:
     env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
