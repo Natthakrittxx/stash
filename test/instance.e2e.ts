@@ -413,6 +413,56 @@ describe("a fresh instance", () => {
     expect(res.headers.get("location")).toContain("/login");
   });
 
+  test("without a working invite, sign-up doesn't reveal which emails have accounts", async () => {
+    await psql(`
+      insert into "user" (id, name, email, email_verified, created_at, updated_at)
+        values ('oracle', 'o', 'taken@example.com', false, now(), now())
+        on conflict do nothing;`);
+    for (const code of [undefined, "not-a-real-code"]) {
+      const taken = await signUp("taken@example.com", code);
+      const free = await signUp("free@example.com", code);
+      expect([taken.status, free.status]).toEqual([403, 403]);
+      const bodies = (await Promise.all([taken.json(), free.json()])) as { code: string }[];
+      expect(bodies.map((b) => b.code)).toEqual(["INVITE_REQUIRED", "INVITE_REQUIRED"]);
+    }
+  });
+
+  test("the reset command clears unfinished second factor setup and pending sign-ins", async () => {
+    await psql(`
+      insert into "user" (id, name, email, email_verified, created_at, updated_at)
+        values ('r1', 'r', 'reset-me@example.com', false, now(), now());
+      insert into two_factor (id, secret, backup_codes, user_id, verified)
+        values ('tf1', 's', 'b', 'r1', false);
+      insert into verification (id, identifier, value, expires_at)
+        values ('v1', '2fa-pending', 'r1', now() + interval '5 minutes'),
+               ('v2', 'unrelated', 'r1', now() + interval '5 minutes');`);
+    expect((await resetPassword("reset-me@example.com")).code).toBe(0);
+    expect(await psql("select count(*) from two_factor where user_id = 'r1'")).toBe("0");
+    expect(await psql("select identifier from verification where value = 'r1'")).toBe("unrelated");
+
+    await psql(`insert into two_factor (id, secret, backup_codes, user_id, verified)
+      values ('tf2', 's', 'b', 'r1', true);`);
+    expect((await resetPassword("reset-me@example.com")).code).toBe(0);
+    expect(await psql("select count(*) from two_factor where user_id = 'r1'")).toBe("1");
+  });
+
+  test("the fetch budget holds on real Postgres, under concurrency too", async () => {
+    await psql(`
+      insert into "user" (id, name, email, email_verified, created_at, updated_at)
+        values ('f1', 'f', 'budget@example.com', false, now(), now());`);
+    const spend = () => psql("select spend_fetch('f1', 3)");
+    const results = await Promise.all([spend(), spend(), spend(), spend(), spend()]);
+    expect(results.filter((r) => r === "t").length).toBe(3);
+    expect(await spend()).toBe("f");
+
+    await psql("update fetch_budget set window_start = now() - interval '61 minutes' where user_id = 'f1'");
+    expect(await spend()).toBe("t");
+    expect(await psql("select used from fetch_budget where user_id = 'f1'")).toBe("1");
+
+    await psql(`delete from "user" where id = 'f1'`);
+    expect(await psql("select count(*) from fetch_budget")).toBe("0");
+  });
+
   test("the reset command fails clearly on an unknown email", async () => {
     const reset = await resetPassword("nobody@example.com");
     expect(reset.code).not.toBe(0);

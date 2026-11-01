@@ -201,6 +201,16 @@ export const twoFactor = pgTable(
   (t) => [index("two_factor_user_id_idx").on(t.userId)],
 );
 
+// One row per account that has triggered a server fetch. Counted separately from
+// items because a delete removes the item, not the fetch it caused.
+export const fetchBudget = pgTable("fetch_budget", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  used: integer("used").notNull(),
+});
+
 export const passkey = pgTable(
   "passkey",
   {

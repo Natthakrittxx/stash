@@ -43,6 +43,13 @@
       "when": 1793457784767,
       "tag": "0005_second_factor_and_passkeys",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793520035940,
+      "tag": "0006_fetch_budget",
+      "breakpoints": true
     }
   ]
 }

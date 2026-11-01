@@ -15,7 +15,7 @@ function stubFetch(url: string, html = "", type = "text/html") {
     ok: true,
     url,
     headers: new Headers({ "content-type": type }),
-    text: async () => html,
+    body: new Response(html).body,
   })) as unknown as typeof fetch;
 }
 
