@@ -6,8 +6,8 @@ import { useState } from "react";
 // reinforces the mark — term-accent teal on success, danger-rose on failure —
 // so state never rides on color alone. Terminal-only: it owns its term-* tones
 // and the caller passes layout/focus classes. `className` stays free of color.
-// Its own module so the landing demo can use it without pulling the whole app
-// (and the auth client) into its bundle.
+// Its own module so a page can use it without pulling the whole app (and the
+// auth client) into its bundle.
 export function CopyButton({
   text,
   className,
