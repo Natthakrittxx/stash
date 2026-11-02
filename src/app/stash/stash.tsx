@@ -979,7 +979,7 @@ export function Stash({
           <StashMark className="size-[1em] rounded-[3px]" />
           Stash
         </h1>
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
           {/* Identity caption yields first on narrow screens: it truncates so a
               long name never crushes the wordmark or pushes the toggle off. */}
           <span className="text-label text-muted min-w-0 truncate">{name}</span>
@@ -1017,7 +1017,8 @@ export function Stash({
             rel="noopener noreferrer"
             aria-label="GitHub repository (opens in a new tab)"
             // Pulled in so the glyphs, not their 36px boxes, set the rhythm.
-            className={`text-muted hover:text-ink -mr-2.5 -ml-1 grid h-9 w-9 shrink-0 place-items-center rounded transition-colors duration-150 ${focusRing}`}
+            // Hidden below sm: a 375px phone can't fit it beside the nav.
+            className={`text-muted hover:text-ink -mr-2.5 -ml-1 hidden h-9 w-9 shrink-0 sm:grid place-items-center rounded transition-colors duration-150 ${focusRing}`}
           >
             <GitHubMark className="size-[18px]" />
           </a>

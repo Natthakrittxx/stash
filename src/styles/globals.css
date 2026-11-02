@@ -385,6 +385,14 @@ html .maplibregl-ctrl-attrib a {
   color: inherit;
 }
 
+/* A phone-width map's attribution line runs under the scale; lift the scale
+   clear of it. */
+@media (width < 40rem) {
+  html .maplibregl-ctrl-bottom-left {
+    bottom: 1.25rem;
+  }
+}
+
 html .maplibregl-ctrl.maplibregl-ctrl-scale {
   background-color: color-mix(in oklab, var(--color-bg) 70%, transparent);
   border-color: var(--color-muted);
