@@ -5,7 +5,7 @@ import {
   doublePrecision,
   index,
   integer,
-  pgTable,
+  pgSchema,
   primaryKey,
   text,
   timestamp,
@@ -13,9 +13,13 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+// Every table lives here, so stash can share a database with other apps (ADR 0002).
+// Exported because drizzle-kit only sees schemas a module exports.
+export const stashSchema = pgSchema("stash");
+
 export type ItemKind = "tool" | "formula" | "place";
 
-export const items = pgTable(
+export const items = stashSchema.table(
   "items",
   {
     id: uuid("id").primaryKey().defaultRandom(),
@@ -68,7 +72,7 @@ export const items = pgTable(
 );
 
 // A named group of items of any kind: tools, formulae and places alike.
-export const collections = pgTable(
+export const collections = stashSchema.table(
   "collections",
   {
     id: uuid("id").primaryKey().defaultRandom(),
@@ -86,7 +90,7 @@ export const collections = pgTable(
 // Many-to-many: one café can sit in "Tokyo, March" and "Coffee worth the trip".
 // Nothing here stops a row joining one user's collection to another user's
 // item, so the actions check that both sides belong to the caller.
-export const collectionItems = pgTable(
+export const collectionItems = stashSchema.table(
   "collection_items",
   {
     collectionId: uuid("collection_id")
@@ -102,7 +106,7 @@ export const collectionItems = pgTable(
   (t) => [primaryKey({ columns: [t.collectionId, t.itemId] })],
 );
 
-export const user = pgTable(
+export const user = stashSchema.table(
   "user",
   {
     id: text("id").primaryKey(),
@@ -126,14 +130,14 @@ export const user = pgTable(
 
 // Unused codes only: redeeming or revoking one deletes its row, so a row
 // existing is what makes a code valid.
-export const inviteCodes = pgTable("invite_code", {
+export const inviteCodes = stashSchema.table("invite_code", {
   code: text("code").primaryKey(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });
 
-export const session = pgTable("session", {
+export const session = stashSchema.table("session", {
   id: text("id").primaryKey(),
   expiresAt: timestamp("expires_at").notNull(),
   token: text("token").notNull().unique(),
@@ -146,7 +150,7 @@ export const session = pgTable("session", {
     .references(() => user.id, { onDelete: "cascade" }),
 });
 
-export const account = pgTable("account", {
+export const account = stashSchema.table("account", {
   id: text("id").primaryKey(),
   accountId: text("account_id").notNull(),
   providerId: text("provider_id").notNull(),
@@ -164,7 +168,7 @@ export const account = pgTable("account", {
   updatedAt: timestamp("updated_at").notNull(),
 });
 
-export const verification = pgTable("verification", {
+export const verification = stashSchema.table("verification", {
   id: text("id").primaryKey(),
   identifier: text("identifier").notNull(),
   value: text("value").notNull(),
@@ -178,7 +182,7 @@ export const verification = pgTable("verification", {
 });
 
 // Secret and backup codes are encrypted with BETTER_AUTH_SECRET.
-export const twoFactor = pgTable(
+export const twoFactor = stashSchema.table(
   "two_factor",
   {
     id: text("id").primaryKey(),
@@ -196,9 +200,9 @@ export const twoFactor = pgTable(
 
 // One row per account that has triggered a server fetch. Counted separately from
 // items because a delete removes the item, not the fetch it caused. Spent through
-// the spend_fetch function in migration 0006, which db:push doesn't create, so
-// build a database with bootstrap or db:migrate.
-export const fetchBudget = pgTable("fetch_budget", {
+// the spend_fetch function in migration 0001, which db:push doesn't create, so
+// build a database with bootstrap, which also moves pre-0.3.0 instances.
+export const fetchBudget = stashSchema.table("fetch_budget", {
   userId: text("user_id")
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
@@ -206,7 +210,7 @@ export const fetchBudget = pgTable("fetch_budget", {
   used: integer("used").notNull(),
 });
 
-export const passkey = pgTable(
+export const passkey = stashSchema.table(
   "passkey",
   {
     id: text("id").primaryKey(),

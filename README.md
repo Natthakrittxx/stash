@@ -39,18 +39,23 @@ stash.example.com {
 
 ## Your own database
 
-Stash needs **PostgreSQL 13 or newer** and **a database used only by stash**, because its tables have plain names such as `user` and `session`. If those names are already taken, the boot stops with an error rather than touching the other tables. Other database engines aren't supported.
+Stash needs **PostgreSQL 13 or newer**. Any database works, including one other apps already use: stash keeps every table in its own schema, `stash`, and touches nothing outside it. Other database engines aren't supported.
 
 Change `DATABASE_URL` in `compose.yml`, adding `?sslmode=require` if your host needs it. Then delete the `depends_on` block under `app`, the `db` service and the `stash-db` volume. Pooled connections work, including Neon's. Your copy of `compose.yml` now holds a password, so keep it private.
 
+If PostgreSQL runs on the same machine as stash, write `host.docker.internal` where the address would say `localhost`, for example `postgresql://stash:secret@host.docker.internal:5432/stash`. A PostgreSQL in another container must publish its port on all interfaces, not only `127.0.0.1`. One installed directly on the machine must listen on Docker's network (`listen_addresses`) and allow it in `pg_hba.conf`.
+
+The database role must be allowed to create the `stash` schema. If it isn't, the boot stops and prints the `GRANT` to run.
+
 ## Upgrades and backups
 
-Pending migrations apply on every container start, and a failed migration stops the boot.
+Pending migrations apply on every container start, and a failed migration stops the boot. Upgrading from a release before 0.3.0 also moves every table from `public` into the `stash` schema, once, on the first boot.
 
 1. Back up first:
    ```sh
    docker compose exec -T db pg_dump -U stash stash > stash-backup.sql
    ```
+   On your own database, add `-n stash` to back up only stash's schema.
 2. Upgrade:
    ```sh
    docker compose pull && docker compose up -d
@@ -58,7 +63,7 @@ Pending migrations apply on every container start, and a failed migration stops 
 
 `latest` moves only when a new version is released. To choose when you upgrade, pin a version tag such as `ghcr.io/natthakrittxx/stash:v0.1.0` in `compose.yml`.
 
-To restore into a new, empty instance, start only the database with `docker compose up -d db`, run `docker compose exec -T db psql -U stash stash < stash-backup.sql`, then run `docker compose up -d`.
+To restore into a new, empty instance, start only the database with `docker compose up -d db`, run `docker compose exec -T db psql -U stash stash < stash-backup.sql`, then run `docker compose up -d`. A backup from before 0.3.0 restores the same way, and the first boot moves it. Restoring one into an instance that has already booted stops the boot instead, so nothing is overwritten.
 
 ## Forgotten passwords
 

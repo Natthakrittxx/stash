@@ -31,12 +31,12 @@ const sql = postgres(url, {
 try {
   const found = await sql.begin(async (tx) => {
     const [user] = await tx<{ id: string }[]>`
-      update "user" set two_factor_enabled = false, updated_at = now()
+      update stash."user" set two_factor_enabled = false, updated_at = now()
       where email = ${email} returning id`;
     if (!user) return false;
 
-    await tx`delete from two_factor where user_id = ${user.id}`;
-    await tx`delete from session where user_id = ${user.id}`;
+    await tx`delete from stash.two_factor where user_id = ${user.id}`;
+    await tx`delete from stash.session where user_id = ${user.id}`;
     return true;
   });
 

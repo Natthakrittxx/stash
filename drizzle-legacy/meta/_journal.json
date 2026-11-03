@@ -1,0 +1,62 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1783672761530,
+      "tag": "0000_pretty_vin_gonzales",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783676607779,
+      "tag": "0001_remarkable_scalphunter",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783704955902,
+      "tag": "0002_wakeful_shadowcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793117270645,
+      "tag": "0003_eminent_sway",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793367160387,
+      "tag": "0004_instance_owner_and_invites",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793457784767,
+      "tag": "0005_second_factor_and_passkeys",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793520035940,
+      "tag": "0006_fetch_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793547125934,
+      "tag": "0007_first_signup_is_owner",
+      "breakpoints": true
+    }
+  ]
+}
