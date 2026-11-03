@@ -5,7 +5,7 @@ Stash saves things for later and makes them findable again. This glossary covers
 ## Language
 
 **Instance**:
-One running deployment of stash with its own database. Instances know nothing about each other.
+One running deployment of stash with its own data. Instances know nothing about each other, even when they share a PostgreSQL server, or a database with other apps.
 _Avoid_: Server, tenant, site
 
 **Operator**:

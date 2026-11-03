@@ -47,9 +47,24 @@ async function compose(...args: string[]) {
   return result.stdout;
 }
 
-const psql = async (sql: string) => {
+// Unqualified names resolve in `stash`, where an instance keeps everything (ADR 0002).
+const psql = async (sql: string, schema = "stash") => {
   const result = await run(
-    ["exec", "-T", "db", "psql", "-U", "stash", "-d", "stash", "-v", "ON_ERROR_STOP=1", "-At"],
+    [
+      "exec",
+      "-e",
+      `PGOPTIONS=-c search_path=${schema}`,
+      "-T",
+      "db",
+      "psql",
+      "-U",
+      "stash",
+      "-d",
+      "stash",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-At",
+    ],
     sql,
   );
   if (result.code !== 0) throw new Error(`psql: ${result.stderr}`);
@@ -75,6 +90,14 @@ async function waitForApp() {
 async function freshDatabase() {
   await compose("down", "-v", "--remove-orphans");
   await compose("up", "-d", "--wait", "db");
+}
+
+// An instance keeps everything in `stash` (ADR 0002): 11 tables as of v0.2.0 plus
+// the migration log, with nothing left in `public` or in Drizzle's default schema.
+async function expectOnlyStashLayout() {
+  expect(await psql("select count(*) from pg_tables where schemaname = 'stash'")).toBe("12");
+  expect(await psql("select count(*) from pg_tables where schemaname = 'public'")).toBe("0");
+  expect(await psql("select count(*) from pg_namespace where nspname = 'drizzle'")).toBe("0");
 }
 
 const ownerNotices = async () =>
@@ -157,6 +180,22 @@ const newPassword = (stdout: string) =>
 const runWith = (...env: string[]) =>
   run(["run", "--rm", "--no-deps", ...env.flatMap((e) => ["-e", e]), "app"]);
 
+// Runs only the boot's database step, connected as `role`, then exits.
+const bootstrapAs = (role: string) =>
+  run([
+    "run",
+    "--rm",
+    "--no-deps",
+    "-e",
+    `DATABASE_URL=postgresql://${role}:${role}@db:5432/stash`,
+    "-e",
+    "BETTER_AUTH_SECRET=instance-test",
+    "--entrypoint",
+    "node",
+    "app",
+    "bootstrap.mjs",
+  ]);
+
 beforeAll(async () => {
   await compose("build", "app");
 }, 15 * MINUTES);
@@ -184,6 +223,10 @@ describe("a fresh instance", () => {
     expect(mode).toBe("600");
     expect(Number(size)).toBeGreaterThan(32);
     expect(readFileSync("compose.yml", "utf8")).not.toContain("BETTER_AUTH_SECRET");
+  });
+
+  test("keeps all its tables and its migration log in the stash schema", async () => {
+    await expectOnlyStashLayout();
   });
 
   test("the image holds no native modules, so it can be cross-built", async () => {
@@ -547,32 +590,49 @@ describe("a fresh instance", () => {
   }, 2 * MINUTES);
 });
 
+// The layout of releases before the stash schema: tables in `public` and Drizzle's
+// log in its default place, holding every migration before `beforeTag`.
+async function oldLayout(beforeTag: string) {
+  const { entries } = JSON.parse(readFileSync("drizzle-legacy/meta/_journal.json", "utf8")) as {
+    entries: { tag: string; when: number }[];
+  };
+  const applied = entries.filter((e) => e.tag < beforeTag);
+  for (const { tag } of applied) {
+    await psql(readFileSync(`drizzle-legacy/${tag}.sql`, "utf8"), "public");
+  }
+  await psql(`
+    create schema if not exists drizzle;
+    create table drizzle.__drizzle_migrations (id serial primary key, hash text not null, created_at bigint);
+    insert into drizzle.__drizzle_migrations (hash, created_at) values
+      ${applied.map((e) => `('${e.tag}', ${e.when})`).join(", ")};`);
+}
+
 describe("upgrading an instance that already has accounts", () => {
   beforeAll(async () => {
     await freshDatabase();
-
-    // The schema as it was at the last release before Owners, recorded as applied.
-    const { entries } = JSON.parse(readFileSync("drizzle/meta/_journal.json", "utf8")) as {
-      entries: { tag: string; when: number }[];
-    };
-    const previous = entries.filter((e) => e.tag < "0004");
-    for (const { tag } of previous) {
-      await psql(readFileSync(`drizzle/${tag}.sql`, "utf8"));
-    }
-    await psql(`
-      create schema if not exists drizzle;
-      create table drizzle.__drizzle_migrations (id serial primary key, hash text not null, created_at bigint);
-      insert into drizzle.__drizzle_migrations (hash, created_at) values ('previous', ${previous.at(-1)!.when});
+    // The last release before Owners, older than v0.1.0.
+    await oldLayout("0004");
+    await psql(
+      `
       insert into "user" (id, name, email, email_verified, created_at, updated_at) values
         ('later', 'later', 'later@example.com', false, '2026-02-01', '2026-02-01'),
         ('first', 'first', 'first@example.com', false, '2026-01-01', '2026-01-01');
       insert into account (id, account_id, provider_id, user_id, password, created_at, updated_at) values
         ('a1', 'later', 'credential', 'later', 'x', now(), now()),
-        ('a2', 'first', 'credential', 'first', 'x', now(), now());`);
+        ('a2', 'first', 'credential', 'first', 'x', now(), now());`,
+      "public",
+    );
 
     await compose("up", "-d", "app");
     await waitForApp();
   }, 5 * MINUTES);
+
+  test("moves everything into the stash schema and drops the old log", async () => {
+    await expectOnlyStashLayout();
+    expect(await psql("select string_agg(id, ',' order by id) from \"user\"")).toBe("first,later");
+    expect(await psql("select spend_fetch('first', 3)")).toBe("t");
+    expect(await psql("select count(*) from pg_proc where proname = 'spend_fetch'")).toBe("1");
+  });
 
   test("doesn't offer the Owner role to the next signup", async () => {
     expect(await ownerNotices()).toBe(0);
@@ -589,22 +649,90 @@ describe("upgrading an instance that already has accounts", () => {
   });
 });
 
-describe("pointing at a database that already has conflicting tables", () => {
-  test("stops the boot and leaves the other data alone", async () => {
-    await freshDatabase();
-    await psql(`create table "user" (id int primary key); insert into "user" values (7);`);
+async function expectBootToFail() {
+  await compose("up", "-d", "app");
+  let state = "";
+  const deadline = Date.now() + 2 * MINUTES;
+  while (Date.now() < deadline && !state.includes("exited")) {
+    state = await compose("ps", "-a", "--format", "{{.State}}", "app");
+    await Bun.sleep(500);
+  }
+  expect(state).toContain("exited");
+  const exit = await compose("ps", "-a", "--format", "{{.ExitCode}}", "app");
+  expect(exit.trim()).not.toBe("0");
+}
 
+describe("restoring an old backup over an instance that already booted", () => {
+  test("stops the boot and leaves both copies alone", async () => {
+    await freshDatabase();
     await compose("up", "-d", "app");
-    let state = "";
-    const deadline = Date.now() + 2 * MINUTES;
-    while (Date.now() < deadline && !state.includes("exited")) {
-      state = await compose("ps", "-a", "--format", "{{.State}}", "app");
-      await Bun.sleep(500);
-    }
-    expect(state).toContain("exited");
-    const exit = await compose("ps", "-a", "--format", "{{.ExitCode}}", "app");
-    expect(exit.trim()).not.toBe("0");
-    expect(await psql(`select id from "user"`)).toBe("7");
-    expect(await psql(`select count(*) from information_schema.tables where table_name = 'items'`)).toBe("0");
+    await waitForApp();
+    await compose("stop", "app");
+    await oldLayout("0008");
+    await psql(
+      `insert into "user" (id, name, email, email_verified, created_at, updated_at)
+       values ('old', 'old', 'old@example.com', false, now(), now());`,
+      "public",
+    );
+
+    await expectBootToFail();
+    expect(await logs()).toContain("both");
+    expect(await psql(`select id from "user"`, "public")).toBe("old");
+    expect(await psql(`select count(*) from "user"`)).toBe("0");
+  }, 4 * MINUTES);
+});
+
+describe("an old instance whose migration log another app also writes to", () => {
+  test("stops the boot and keeps the other app's history", async () => {
+    await freshDatabase();
+    await oldLayout("0008");
+    await psql(`insert into drizzle.__drizzle_migrations (hash, created_at) values ('theirs', 1800000000000);`);
+
+    const { code, stdout, stderr } = await bootstrapAs("stash");
+    expect(code).not.toBe(0);
+    expect(stdout + stderr).toContain("other app");
+    expect(await psql("select count(*) from drizzle.__drizzle_migrations")).toBe("9");
+    expect(await psql("select count(*) from pg_tables where schemaname = 'public'")).toBe("11");
+  }, 3 * MINUTES);
+});
+
+describe("a database role that may not create schemas", () => {
+  test("stops the boot and says which grant it needs", async () => {
+    await freshDatabase();
+    await psql(`create role limited login password 'limited';`);
+
+    const { code, stdout, stderr } = await runWith(
+      "DATABASE_URL=postgresql://limited:limited@db:5432/stash",
+    );
+    expect(code).not.toBe(0);
+    expect(stdout + stderr).toContain(`GRANT CREATE ON DATABASE "stash" TO "limited";`);
+  }, 3 * MINUTES);
+});
+
+describe("pointing at a database another Drizzle app already uses", () => {
+  test("boots beside it and leaves its tables and migration log alone", async () => {
+    await freshDatabase();
+    // The other app has its own role, and stash's role may not even look into its
+    // schemas. Named `app`, stash's role also has no `stash` schema on its search_path.
+    await psql(
+      `
+      create role other;
+      create role app login password 'app';
+      grant create on database stash to app;
+      create table "user" (id int primary key); insert into "user" values (7);
+      alter table "user" owner to other;
+      create schema drizzle authorization other;
+      create table drizzle.__drizzle_migrations (id serial primary key, hash text not null, created_at bigint);
+      insert into drizzle.__drizzle_migrations (hash, created_at) values ('theirs', 1700000000000);
+      alter table drizzle.__drizzle_migrations owner to other;`,
+      "public",
+    );
+
+    const boot = await bootstrapAs("app");
+    expect(boot.stderr).not.toContain("Error");
+    expect(boot.code).toBe(0);
+    expect(await psql(`select id from "user"`, "public")).toBe("7");
+    expect(await psql("select hash from drizzle.__drizzle_migrations")).toBe("theirs");
+    expect(await psql("select count(*) from pg_tables where schemaname = 'stash'")).toBe("12");
   }, 3 * MINUTES);
 });
