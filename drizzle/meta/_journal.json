@@ -15,6 +15,13 @@
       "when": 1793688782840,
       "tag": "0001_spend_fetch",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793788166100,
+      "tag": "0002_collaborators",
+      "breakpoints": true
     }
   ]
 }

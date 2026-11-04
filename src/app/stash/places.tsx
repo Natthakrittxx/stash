@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 
 import { areaOf, isMapsLink } from "~/maps";
 
-import type { Collection, Item } from "./stash";
-import { focusRing, langOf, quietButton, touch } from "./ui";
+import type { Account, Collection, Item } from "./stash";
+import { field, focusRing, langOf, quietButton, touch } from "./ui";
 
 const metres = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
@@ -113,11 +113,13 @@ export function PlaceRow({
 // that puts it on the map.
 export function UnpinnedRow({
   item,
+  filing,
   onPin,
   onEdit,
   onDelete,
 }: {
   item: Item;
+  filing: Filing;
   onPin: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -134,31 +136,37 @@ export function UnpinnedRow({
         {item.title}
         <span className="sr-only"> (opens in a new tab)</span>
       </a>
-      <span className="-mx-2 flex shrink-0 gap-1">
-        <button
-          type="button"
-          onClick={onPin}
-          aria-label={`Set location of ${item.title}`}
-          className={`${quietButton} text-accent underline underline-offset-2`}
-        >
-          Set location
-        </button>
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={`Edit ${item.title}`}
-          className={`${quietButton} hover:text-ink`}
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label={`Delete ${item.title}`}
-          className={`${quietButton} hover:text-danger`}
-        >
-          Delete
-        </button>
+      <span className="-mx-2 flex shrink-0 items-center gap-1">
+        {item.savedBy !== null ? (
+          <SavedBy item={item} filing={filing} />
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={onPin}
+              aria-label={`Set location of ${item.title}`}
+              className={`${quietButton} text-accent underline underline-offset-2`}
+            >
+              Set location
+            </button>
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label={`Edit ${item.title}`}
+              className={`${quietButton} hover:text-ink`}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label={`Delete ${item.title}`}
+              className={`${quietButton} hover:text-danger`}
+            >
+              Delete
+            </button>
+          </>
+        )}
       </span>
     </li>
   );
@@ -169,9 +177,68 @@ export function UnpinnedRow({
 // parent (beneath the actions, or beneath a formula's console card).
 export type Filing = {
   collections: Collection[];
+  // The collection on screen, if any: the only place someone else's item shows.
+  open: Collection | null;
   onToggle: (collectionId: string, itemId: string, member: boolean) => void;
   onCreate: (name: string) => Promise<string | undefined>;
 };
+
+// Someone else's item in a shared collection: who saved it, and the one thing
+// anyone in the collection may do to it. Edit, Delete and filing stay theirs
+// (ADR 0003).
+export function SavedBy({
+  item,
+  filing,
+  labelClass = "text-label text-muted px-2",
+  className = `${quietButton} hover:text-ink`,
+}: {
+  item: Item;
+  filing: Filing;
+  labelClass?: string;
+  className?: string;
+}) {
+  const here = filing.open;
+  return (
+    <>
+      <span lang={langOf(item.savedBy ?? "")} className={labelClass}>
+        Saved by {item.savedBy}
+      </span>
+      {here && (
+        <button
+          type="button"
+          onClick={() => filing.onToggle(here.id, item.id, false)}
+          aria-label={`Take ${item.title} out of ${here.name}`}
+          className={className}
+        >
+          Take out
+        </button>
+      )}
+    </>
+  );
+}
+
+// Beside a shared collection's name, so you know before filing that others
+// will see it.
+export function SharedMark() {
+  return (
+    <>
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 16 16"
+        className="size-3.5 shrink-0"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      >
+        <circle cx="6" cy="5.5" r="2.25" />
+        <path d="M1.75 13.5c.5-2.4 2.2-3.75 4.25-3.75s3.75 1.35 4.25 3.75" />
+        <path d="M10.5 3.5a2.25 2.25 0 0 1 0 4.25M12 9.9c1.2.5 2 1.7 2.25 3.6" />
+      </svg>
+      <span className="sr-only"> (shared)</span>
+    </>
+  );
+}
 
 export function CollectionsButton({
   item,
@@ -228,6 +295,7 @@ export function CollectionsPanel({
           <span lang={langOf(c.name)} className="truncate">
             {c.name}
           </span>
+          {c.collaborators.length > 0 && <SharedMark />}
         </label>
       ))}
       <NewCollection
@@ -294,28 +362,34 @@ export function PlaceCard({
           <span aria-hidden="true">&nbsp;↗</span>
           <span className="sr-only"> (opens in a new tab)</span>
         </a>
-        <CollectionsButton
-          item={item}
-          filing={filing}
-          open={open}
-          onClick={() => setOpen(!open)}
-        />
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={`Edit ${item.title}`}
-          className={`${quietButton} hover:text-ink`}
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label={`Delete ${item.title}`}
-          className={`${quietButton} hover:text-danger`}
-        >
-          Delete
-        </button>
+        {item.savedBy !== null ? (
+          <SavedBy item={item} filing={filing} />
+        ) : (
+          <>
+            <CollectionsButton
+              item={item}
+              filing={filing}
+              open={open}
+              onClick={() => setOpen(!open)}
+            />
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label={`Edit ${item.title}`}
+              className={`${quietButton} hover:text-ink`}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label={`Delete ${item.title}`}
+              className={`${quietButton} hover:text-danger`}
+            >
+              Delete
+            </button>
+          </>
+        )}
       </div>
 
       {open && <CollectionsPanel item={item} filing={filing} />}
@@ -433,18 +507,35 @@ export function NewCollection({
 
 // The list's name: the open collection, or the kind showing. Every view has
 // one, so the search and list sit at the same height wherever you are. A
-// collection can be deleted from here; its things stay in the stash.
+// collection's Creator deletes it and picks who shares it from here; a
+// Collaborator leaves from here. Its things stay in their savers' stashes.
+const andList = new Intl.ListFormat("en", { type: "conjunction" });
+
 export function IndexHeading({
   collection,
+  accounts,
   fallback,
   onDelete,
+  onLeave,
+  onAdd,
+  onRemove,
 }: {
   collection: Collection | null;
+  accounts: Account[];
   fallback: string;
   onDelete: () => void;
+  onLeave: () => void;
+  onAdd: (userId: string) => void;
+  onRemove: (userId: string) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [people, setPeople] = useState(false);
   const name = collection?.name ?? fallback;
+  const collaborators = collection?.collaborators ?? [];
+  const names = andList.format(collaborators.map((c) => c.name));
+  const addable = accounts.filter(
+    (a) => !collaborators.some((c) => c.id === a.id),
+  );
 
   return (
     <div className="mb-4">
@@ -456,26 +547,50 @@ export function IndexHeading({
           {name}
         </h2>
         {collection && !confirming && (
-          <button
-            type="button"
-            onClick={() => setConfirming(true)}
-            className={`${quietButton} hover:text-danger -mr-2 shrink-0`}
-          >
-            Delete collection
-          </button>
+          <div className="-mr-2 flex shrink-0 gap-1">
+            {collection.mine && (
+              <button
+                type="button"
+                aria-expanded={people}
+                aria-controls="collection-people"
+                onClick={() => setPeople(!people)}
+                className={`${quietButton} hover:text-ink`}
+              >
+                People
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className={`${quietButton} hover:text-danger`}
+            >
+              {collection.mine ? "Delete collection" : "Leave"}
+            </button>
+          </div>
         )}
       </div>
+      {collection && collaborators.length > 0 && (
+        <p className="text-label text-muted mt-1">
+          {collection.mine
+            ? `Shared with ${names}`
+            : `Shared by ${collection.creator} with ${names}`}
+        </p>
+      )}
       {collection && confirming && (
         <div className="text-label mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="text-ink">
-            Delete “{collection.name}”? Its places stay in your stash.
+            {!collection.mine
+              ? `Leave “${collection.name}”? Your things in it leave with you and stay in your stash.`
+              : collaborators.length > 0
+                ? `Delete “${collection.name}” for everyone in it? Everything stays in the stash of whoever saved it.`
+                : `Delete “${collection.name}”? Its places stay in your stash.`}
           </span>
           <button
             type="button"
-            onClick={onDelete}
+            onClick={collection.mine ? onDelete : onLeave}
             className={`text-danger rounded font-medium underline underline-offset-2 ${touch} ${focusRing}`}
           >
-            Delete
+            {collection.mine ? "Delete" : "Leave"}
           </button>
           <button
             type="button"
@@ -484,6 +599,81 @@ export function IndexHeading({
           >
             Cancel
           </button>
+        </div>
+      )}
+      {collection?.mine && people && (
+        <div
+          id="collection-people"
+          className="border-border text-label mt-2 border-t pt-2"
+        >
+          {/* The picker sits above the list, so a new person's row (and its
+              Remove) never lands under the pointer that just pressed Add. */}
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const id = new FormData(event.currentTarget).get("account");
+              if (typeof id !== "string" || !id) return;
+              onAdd(id);
+              event.currentTarget.reset();
+            }}
+          >
+            <label htmlFor="add-person" className="sr-only">
+              Add someone to {collection.name}
+            </label>
+            {/* Stays in place when no one is left to add, so the list below
+                  never jumps. */}
+            <select
+              id="add-person"
+              name="account"
+              required
+              defaultValue=""
+              disabled={addable.length === 0}
+              className={`${field} min-w-0 flex-1 py-1.5 disabled:opacity-60`}
+            >
+              <option value="" disabled>
+                {addable.length > 0
+                  ? "Add someone…"
+                  : accounts.length === 0
+                    ? "No one else has an account here yet"
+                    : "Everyone here is already in it"}
+              </option>
+              {addable.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} · {a.email}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              disabled={addable.length === 0}
+              className={`${quietButton} text-accent -mr-2 shrink-0 underline underline-offset-2 disabled:opacity-60`}
+            >
+              Add
+            </button>
+          </form>
+          {collaborators.length > 0 && (
+            <ul aria-label={`People in ${collection.name}`} className="mt-1">
+              {collaborators.map((p) => (
+                <li
+                  key={p.id}
+                  className="text-ink flex items-center justify-between gap-2"
+                >
+                  <span lang={langOf(p.name)} className="truncate">
+                    {p.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onRemove(p.id)}
+                    aria-label={`Remove ${p.name} from ${collection.name}`}
+                    className={`${quietButton} hover:text-danger -mr-2`}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>

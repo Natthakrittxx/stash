@@ -27,3 +27,19 @@ _Avoid_: MFA, 2FA
 **Passkey**:
 A credential held on an account holder's device or password manager that signs them in on its own, with no password and no second factor.
 _Avoid_: WebAuthn credential, security key
+
+**Collection**:
+A named group of items, of any kind, made by one account.
+_Avoid_: Folder, list, board
+
+**Creator**:
+The account that made a collection. Only the Creator decides who else is in it, what it is called, and whether it exists.
+_Avoid_: Owner (the instance's invite manager), host, admin
+
+**Collaborator**:
+An account the Creator has added to a collection. The Creator is not a Collaborator.
+_Avoid_: Member, participant, guest
+
+**Shared collection**:
+A collection with at least one Collaborator. The only way anything in one account's stash becomes visible to another; it stops being shared when the last Collaborator goes.
+_Avoid_: Group, team, workspace, shared stash

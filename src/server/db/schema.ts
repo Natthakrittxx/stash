@@ -88,8 +88,9 @@ export const collections = stashSchema.table(
 );
 
 // Many-to-many: one café can sit in "Tokyo, March" and "Coffee worth the trip".
-// Nothing here stops a row joining one user's collection to another user's
-// item, so the actions check that both sides belong to the caller.
+// Nothing here stops a row joining any collection to any item, so the actions
+// check that the caller is in the collection and, to file an item, saved it.
+// A shared collection holds items of several accounts (ADR 0003).
 export const collectionItems = stashSchema.table(
   "collection_items",
   {
@@ -104,6 +105,27 @@ export const collectionItems = stashSchema.table(
       .defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.collectionId, t.itemId] })],
+);
+
+// The accounts a collection's Creator (its `user_id`) has shared it with. A
+// collection with a row here is a shared collection.
+export const collaborators = stashSchema.table(
+  "collaborators",
+  {
+    collectionId: uuid("collection_id")
+      .notNull()
+      .references(() => collections.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.collectionId, t.userId] }),
+    index("collaborators_user_id_idx").on(t.userId),
+  ],
 );
 
 export const user = stashSchema.table(

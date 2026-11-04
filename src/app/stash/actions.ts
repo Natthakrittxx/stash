@@ -9,11 +9,19 @@ import { text, titleOr } from "~/form";
 import { isMapsLink } from "~/maps";
 import { getSession } from "~/server/better-auth/server";
 import { db } from "~/server/db";
-import { collectionItems, collections, items } from "~/server/db/schema";
+import {
+  collaborators,
+  collectionItems,
+  collections,
+  items,
+  user,
+} from "~/server/db/schema";
 import { spendFetch } from "~/server/fetch-budget";
 import { fetchPreview } from "~/server/og";
 import { resolvePlace } from "~/server/place";
 import { normalizeUrl } from "~/server/url";
+
+import { inCollection } from "./data";
 
 const ITEMS_PER_HOUR = 60;
 
@@ -212,7 +220,7 @@ export async function createItem(formData: FormData): Promise<Result> {
     .returning({ id: items.id });
 
   // Saved with a collection open (or undone out of some): file it there too,
-  // but only into collections that are the caller's.
+  // but only into collections the caller is in.
   const wanted = formData
     .getAll("collection")
     .filter((v): v is string => idSchema.safeParse(v).success);
@@ -220,9 +228,7 @@ export async function createItem(formData: FormData): Promise<Result> {
     const owned = await db
       .select({ id: collections.id })
       .from(collections)
-      .where(
-        and(eq(collections.userId, userId), inArray(collections.id, wanted)),
-      );
+      .where(and(inCollection(userId), inArray(collections.id, wanted)));
     if (owned.length > 0)
       await db
         .insert(collectionItems)
@@ -378,15 +384,21 @@ export async function setMembership(
   )
     return { error: "No such collection." };
 
-  // The join table can't check ownership itself: both sides must be the caller's.
-  const [both] = await db
+  // The join table can't check this itself. The caller must be in the
+  // collection; to file an item in, they must also have saved it. Anyone in it
+  // may take any item out (ADR 0003).
+  const [target] = await db
     .select({ id: collections.id })
     .from(collections)
-    .innerJoin(items, and(eq(items.id, itemId), eq(items.userId, userId)))
-    .where(
-      and(eq(collections.id, collectionId), eq(collections.userId, userId)),
-    );
-  if (!both) return { error: "No such collection." };
+    .where(and(eq(collections.id, collectionId), inCollection(userId)));
+  if (!target) return { error: "No such collection." };
+  if (member) {
+    const [mine] = await db
+      .select({ id: items.id })
+      .from(items)
+      .where(and(eq(items.id, itemId), eq(items.userId, userId)));
+    if (!mine) return { error: "No such collection." };
+  }
 
   if (member)
     await db
@@ -402,6 +414,100 @@ export async function setMembership(
           eq(collectionItems.itemId, itemId),
         ),
       );
+
+  revalidatePath("/stash");
+  return {};
+}
+
+// Creator only. The account must exist and not be the Creator; adding someone
+// already in changes nothing.
+export async function addCollaborator(
+  collectionId: string,
+  userId: string,
+): Promise<Result> {
+  const caller = await requireUserId();
+  if (!idSchema.safeParse(collectionId).success || userId === caller)
+    return { error: "No such collection." };
+
+  const [created] = await db
+    .select({ id: collections.id })
+    .from(collections)
+    .where(and(eq(collections.id, collectionId), eq(collections.userId, caller)));
+  const [account] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.id, userId));
+  if (!created || !account) return { error: "No such collection." };
+
+  await db
+    .insert(collaborators)
+    .values({ collectionId, userId })
+    .onConflictDoNothing();
+
+  revalidatePath("/stash");
+  return {};
+}
+
+// Removing or leaving takes the account's items out with it: once out, nobody
+// keeps seeing their things (ADR 0003). False when they weren't in it.
+async function dropCollaborator(collectionId: string, userId: string) {
+  return db.transaction(async (tx) => {
+    const gone = await tx
+      .delete(collaborators)
+      .where(
+        and(
+          eq(collaborators.collectionId, collectionId),
+          eq(collaborators.userId, userId),
+        ),
+      )
+      .returning({ userId: collaborators.userId });
+    if (gone.length === 0) return false;
+    await tx
+      .delete(collectionItems)
+      .where(
+        and(
+          eq(collectionItems.collectionId, collectionId),
+          inArray(
+            collectionItems.itemId,
+            tx
+              .select({ id: items.id })
+              .from(items)
+              .where(eq(items.userId, userId)),
+          ),
+        ),
+      );
+    return true;
+  });
+}
+
+// Creator only.
+export async function removeCollaborator(
+  collectionId: string,
+  userId: string,
+): Promise<Result> {
+  const caller = await requireUserId();
+  if (!idSchema.safeParse(collectionId).success)
+    return { error: "No such collection." };
+
+  const [created] = await db
+    .select({ id: collections.id })
+    .from(collections)
+    .where(and(eq(collections.id, collectionId), eq(collections.userId, caller)));
+  if (!created) return { error: "No such collection." };
+
+  await dropCollaborator(collectionId, userId);
+  revalidatePath("/stash");
+  return {};
+}
+
+// Collaborators only: the Creator's way out is deleting the collection.
+export async function leaveCollection(collectionId: string): Promise<Result> {
+  const caller = await requireUserId();
+  if (
+    !idSchema.safeParse(collectionId).success ||
+    !(await dropCollaborator(collectionId, caller))
+  )
+    return { error: "No such collection." };
 
   revalidatePath("/stash");
   return {};
