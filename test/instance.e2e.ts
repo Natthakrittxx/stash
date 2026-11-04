@@ -92,10 +92,11 @@ async function freshDatabase() {
   await compose("up", "-d", "--wait", "db");
 }
 
-// An instance keeps everything in `stash` (ADR 0002): 11 tables as of v0.2.0 plus
-// the migration log, with nothing left in `public` or in Drizzle's default schema.
+// An instance keeps everything in `stash` (ADR 0002): 12 tables (11 as of v0.2.0,
+// then collaborators) plus the migration log, with nothing left in `public` or in
+// Drizzle's default schema.
 async function expectOnlyStashLayout() {
-  expect(await psql("select count(*) from pg_tables where schemaname = 'stash'")).toBe("12");
+  expect(await psql("select count(*) from pg_tables where schemaname = 'stash'")).toBe("13");
   expect(await psql("select count(*) from pg_tables where schemaname = 'public'")).toBe("0");
   expect(await psql("select count(*) from pg_namespace where nspname = 'drizzle'")).toBe("0");
 }
@@ -733,6 +734,6 @@ describe("pointing at a database another Drizzle app already uses", () => {
     expect(boot.code).toBe(0);
     expect(await psql(`select id from "user"`, "public")).toBe("7");
     expect(await psql("select hash from drizzle.__drizzle_migrations")).toBe("theirs");
-    expect(await psql("select count(*) from pg_tables where schemaname = 'stash'")).toBe("12");
+    expect(await psql("select count(*) from pg_tables where schemaname = 'stash'")).toBe("13");
   }, 3 * MINUTES);
 });

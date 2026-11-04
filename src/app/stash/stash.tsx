@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -39,6 +40,9 @@ import {
   createItem,
   deleteCollection,
   deleteItem,
+  addCollaborator,
+  leaveCollection,
+  removeCollaborator,
   setMembership,
   setPlacePin,
   updateItem,
@@ -52,6 +56,8 @@ import {
   IndexHeading,
   NewCollection,
   PlaceCard,
+  SavedBy,
+  SharedMark,
   PlaceRow,
   UnpinnedRow,
 } from "./places";
@@ -77,8 +83,22 @@ export type Item = Pick<
   | "lat"
   | "lng"
   | "address"
->;
-export type Collection = { id: string; name: string; itemIds: string[] };
+> & {
+  // Null for the caller's own items. Anyone else's arrives only through a
+  // shared collection, and is shown only inside one (ADR 0003).
+  savedBy: string | null;
+};
+export type Person = { id: string; name: string };
+export type Collection = {
+  id: string;
+  name: string;
+  itemIds: string[];
+  creator: string;
+  // The caller is its Creator.
+  mine: boolean;
+  collaborators: Person[];
+};
+export type Account = Person & { email: string };
 type Tab = "all" | "tool" | "formula" | "place";
 // What a fresh composer opens with, field by field: a remembered draft, a
 // no-match prefill, or the item being edited.
@@ -156,6 +176,7 @@ function draftFrom(formData: FormData, id: string): Item {
     lat: pin?.lat ?? null,
     lng: pin?.lng ?? null,
     address: null,
+    savedBy: null,
     // The server resolves the real preview and revalidates; until then the row
     // shows its monogram fallback.
     image: null,
@@ -245,6 +266,7 @@ function useWide(initial: boolean) {
 export function Stash({
   items: initial,
   collections: initialCollections,
+  accounts,
   name,
   isOwner,
   initialWide,
@@ -252,6 +274,7 @@ export function Stash({
 }: {
   items: Item[];
   collections: Collection[];
+  accounts: Account[];
   name: string;
   isOwner: boolean;
   initialWide: boolean;
@@ -464,22 +487,31 @@ export function Stash({
     return () => window.removeEventListener("keydown", onKey);
   }, [composer, query, dropping, cardFor]);
 
+  const collection = folders.find((c) => c.id === collectionId) ?? null;
+  // Your own items, plus everyone's in the open collection. Others' items in a
+  // shared collection stay out of your full list, search and tags (ADR 0003).
+  const inScope = useCallback(
+    (i: Item) => i.savedBy === null || !!collection?.itemIds.includes(i.id),
+    [collection],
+  );
+  const scope = useMemo(() => list.filter(inScope), [list, inScope]);
+
   const allTags = useMemo(
     () =>
-      [...new Set(list.flatMap((i) => i.tags))].sort((a, b) =>
+      [...new Set(scope.flatMap((i) => i.tags))].sort((a, b) =>
         a.localeCompare(b),
       ),
-    [list],
+    [scope],
   );
 
   // Uses across the whole stash, not the search: the rail ranks by these, and
   // a ranking that reshuffled on every keystroke would be unusable.
   const tagTotals = useMemo(() => {
     const m = new Map<string, number>();
-    for (const item of list)
+    for (const item of scope)
       for (const t of item.tags) m.set(t, (m.get(t) ?? 0) + 1);
     return m;
-  }, [list]);
+  }, [scope]);
 
   // Search runs over title, description, cmd, URL and tags — every field a row
   // shows, so the host printed beside a title is findable too. Thai has no word
@@ -488,7 +520,9 @@ export function Stash({
   // rail counts read off `searched`, so every count answers "how many match
   // this search" and stays put no matter which facet is active.
   const q = deferredQuery.trim();
-  const searched = useMemo(() => {
+  // Over everything loaded, so a shared collection's rail count includes
+  // everyone's items before it is opened; `searched` is what this view shows.
+  const searchedAll = useMemo(() => {
     const needle = q.toLowerCase();
     if (!needle) return list;
     return list.filter((item) =>
@@ -502,6 +536,10 @@ export function Stash({
       ].some((field) => field.toLowerCase().includes(needle)),
     );
   }, [list, q]);
+  const searched = useMemo(
+    () => searchedAll.filter(inScope),
+    [searchedAll, inScope],
+  );
 
   const kindCounts: Record<Tab, number> = {
     all: searched.length,
@@ -523,7 +561,6 @@ export function Stash({
     (t) => (tagCounts.get(t) ?? 0) > 0 || t === activeTag,
   );
 
-  const collection = folders.find((c) => c.id === collectionId) ?? null;
   const activeFilters =
     (tab === "all" ? 0 : 1) + (activeTag ? 1 : 0) + (collection ? 1 : 0);
   const hasItems = list.length > 0;
@@ -535,7 +572,7 @@ export function Stash({
       kindCounts={kindCounts}
       collections={folders.map((c) => ({
         ...c,
-        count: searched.filter((i) => c.itemIds.includes(i.id)).length,
+        count: searchedAll.filter((i) => c.itemIds.includes(i.id)).length,
       }))}
       activeCollection={collection?.id ?? null}
       onCollection={onCollection}
@@ -602,7 +639,7 @@ export function Stash({
   const unpinned = places.filter((p) => p.lat === null || p.lng === null);
   // Is there a map to draw at all: anything in this view before search and
   // tags narrow it.
-  const mapShown = list.some(
+  const mapShown = scope.some(
     (i) =>
       i.kind === "place" && (!collection || collection.itemIds.includes(i.id)),
   );
@@ -750,6 +787,19 @@ export function Stash({
       const result = await setMembership(cid, itemId, member);
       if (result.error) setError({ message: result.error });
     });
+  }
+
+  // People changes wait for the server: the refreshed page brings the new list.
+  function onPeople(action: () => Promise<{ error?: string }>) {
+    startTransition(async () => {
+      const result = await action();
+      if (result.error) setError({ message: result.error });
+    });
+  }
+
+  function onLeaveCollection(c: Collection) {
+    setCollectionId(null);
+    onPeople(() => leaveCollection(c.id));
   }
 
   function onDeleteCollection(c: Collection) {
@@ -911,6 +961,7 @@ export function Stash({
   // Any item can be filed into collections, from wherever its actions live.
   const filing: Filing = {
     collections: folders,
+    open: collection,
     onToggle: onToggleMember,
     onCreate: onCreateCollection,
   };
@@ -1095,7 +1146,16 @@ export function Stash({
                   place: "Places",
                 }[tab]
               }
+              accounts={accounts}
               onDelete={() => collection && onDeleteCollection(collection)}
+              onLeave={() => collection && onLeaveCollection(collection)}
+              onAdd={(id) =>
+                collection && onPeople(() => addCollaborator(collection.id, id))
+              }
+              onRemove={(id) =>
+                collection &&
+                onPeople(() => removeCollaborator(collection.id, id))
+              }
             />
           )}
           <div className="flex gap-2">
@@ -1285,6 +1345,7 @@ export function Stash({
                           <UnpinnedRow
                             key={item.id}
                             item={item}
+                            filing={filing}
                             onPin={() => {
                               setDropping(item);
                               setCardFor(null);
@@ -1678,6 +1739,7 @@ function FilterRail({
                   key={c.id}
                   label={c.name}
                   count={c.count}
+                  shared={c.collaborators.length > 0}
                   active={on}
                   onClick={() => onCollection(on ? null : c.id)}
                 />
@@ -1740,11 +1802,13 @@ function FilterRail({
 function FilterRow({
   label,
   count,
+  shared = false,
   active,
   onClick,
 }: {
   label: string;
   count: number;
+  shared?: boolean;
   active: boolean;
   onClick: () => void;
 }) {
@@ -1766,6 +1830,7 @@ function FilterRow({
         <span lang={langOf(label)} className="truncate">
           {label}
         </span>
+        {shared && <SharedMark />}
       </span>
       <span
         className={`shrink-0 tabular-nums ${active ? "text-bg" : "text-muted"}`}
@@ -2262,29 +2327,35 @@ function Row({
         )}
       </div>
 
-      <div className="row-actions col-start-2 mt-1 -ml-2 flex flex-wrap gap-1 transition-opacity duration-150 sm:col-start-auto sm:mt-0 sm:ml-0">
-        <CollectionsButton
-          item={item}
-          filing={filing}
-          open={filingOpen}
-          onClick={() => setFilingOpen(!filingOpen)}
-        />
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={`Edit ${item.title}`}
-          className={`${quietButton} hover:text-ink`}
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label={`Delete ${item.title}`}
-          className={`${quietButton} hover:text-danger`}
-        >
-          Delete
-        </button>
+      <div className="row-actions col-start-2 mt-1 -ml-2 flex flex-wrap items-center gap-1 transition-opacity duration-150 sm:col-start-auto sm:mt-0 sm:ml-0">
+        {item.savedBy !== null ? (
+          <SavedBy item={item} filing={filing} />
+        ) : (
+          <>
+            <CollectionsButton
+              item={item}
+              filing={filing}
+              open={filingOpen}
+              onClick={() => setFilingOpen(!filingOpen)}
+            />
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label={`Edit ${item.title}`}
+              className={`${quietButton} hover:text-ink`}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label={`Delete ${item.title}`}
+              className={`${quietButton} hover:text-danger`}
+            >
+              Delete
+            </button>
+          </>
+        )}
       </div>
       {filingOpen && (
         <CollectionsPanel
@@ -2429,29 +2500,35 @@ function DetailPane({
         </ul>
       )}
 
-      <div className="mt-1 -ml-2 flex flex-wrap gap-1">
-        <CollectionsButton
-          item={item}
-          filing={filing}
-          open={filingOpen}
-          onClick={() => setFilingOpen(!filingOpen)}
-        />
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={`Edit ${item.title}`}
-          className={`${quietButton} hover:text-ink`}
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label={`Delete ${item.title}`}
-          className={`${quietButton} hover:text-danger`}
-        >
-          Delete
-        </button>
+      <div className="mt-1 -ml-2 flex flex-wrap items-center gap-1">
+        {item.savedBy !== null ? (
+          <SavedBy item={item} filing={filing} />
+        ) : (
+          <>
+            <CollectionsButton
+              item={item}
+              filing={filing}
+              open={filingOpen}
+              onClick={() => setFilingOpen(!filingOpen)}
+            />
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label={`Edit ${item.title}`}
+              className={`${quietButton} hover:text-ink`}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label={`Delete ${item.title}`}
+              className={`${quietButton} hover:text-danger`}
+            >
+              Delete
+            </button>
+          </>
+        )}
       </div>
       {filingOpen && <CollectionsPanel item={item} filing={filing} />}
     </aside>
@@ -2699,30 +2776,41 @@ function FormulaCard({
           >
             {item.title}
           </h3>
-          <div className="row-actions ml-auto flex shrink-0 gap-1 transition-opacity duration-150">
-            <CollectionsButton
-              item={item}
-              filing={filing}
-              open={filingOpen}
-              onClick={() => setFilingOpen(!filingOpen)}
-              className={`text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
-            />
-            <button
-              type="button"
-              onClick={onEdit}
-              aria-label={`Edit ${item.title}`}
-              className={`text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={onDelete}
-              aria-label={`Delete ${item.title}`}
-              className={`text-label text-term-muted hover:text-term-danger focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
-            >
-              Delete
-            </button>
+          <div className="row-actions ml-auto flex shrink-0 items-center gap-1 transition-opacity duration-150">
+            {item.savedBy !== null ? (
+              <SavedBy
+                item={item}
+                filing={filing}
+                labelClass="text-label text-term-muted"
+                className={`text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
+              />
+            ) : (
+              <>
+                <CollectionsButton
+                  item={item}
+                  filing={filing}
+                  open={filingOpen}
+                  onClick={() => setFilingOpen(!filingOpen)}
+                  className={`text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
+                />
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  aria-label={`Edit ${item.title}`}
+                  className={`text-label text-term-muted hover:text-term-ink focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  aria-label={`Delete ${item.title}`}
+                  className={`text-label text-term-muted hover:text-term-danger focus-visible:outline-term-accent inline-flex items-center rounded px-2 py-0.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${touch}`}
+                >
+                  Delete
+                </button>
+              </>
+            )}
           </div>
         </div>
 
