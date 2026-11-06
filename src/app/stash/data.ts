@@ -6,6 +6,7 @@ import {
   collectionItems,
   collections,
   items,
+  tags,
   user,
 } from "~/server/db/schema";
 
@@ -48,60 +49,74 @@ export async function loadStash(userId: string): Promise<{
   items: Item[];
   collections: Collection[];
   accounts: Account[];
+  tags: string[];
 }> {
   const reach = inCollection(userId);
-  const [own, theirs, folders, links, people, accounts] = await Promise.all([
-    db
-      .select(columns)
-      .from(items)
-      .where(eq(items.userId, userId))
-      .orderBy(asc(items.title)),
-    db
-      .selectDistinct({ ...columns, savedBy: user.name })
-      .from(items)
-      .innerJoin(user, eq(user.id, items.userId))
-      .innerJoin(collectionItems, eq(collectionItems.itemId, items.id))
-      .innerJoin(collections, eq(collections.id, collectionItems.collectionId))
-      .where(and(ne(items.userId, userId), reach))
-      .orderBy(asc(items.title)),
-    db
-      .select({
-        id: collections.id,
-        name: collections.name,
-        creatorId: collections.userId,
-        creator: user.name,
-      })
-      .from(collections)
-      .innerJoin(user, eq(user.id, collections.userId))
-      .where(reach)
-      .orderBy(asc(collections.name)),
-    db
-      .select({
-        collectionId: collectionItems.collectionId,
-        itemId: collectionItems.itemId,
-      })
-      .from(collectionItems)
-      .innerJoin(collections, eq(collections.id, collectionItems.collectionId))
-      .where(reach),
-    db
-      .select({
-        collectionId: collaborators.collectionId,
-        id: user.id,
-        name: user.name,
-      })
-      .from(collaborators)
-      .innerJoin(user, eq(user.id, collaborators.userId))
-      .innerJoin(collections, eq(collections.id, collaborators.collectionId))
-      .where(reach)
-      .orderBy(asc(user.name)),
-    // For the Creator's picker: the instance is a small invited circle, so
-    // every account holder may see every other's name and email.
-    db
-      .select({ id: user.id, name: user.name, email: user.email })
-      .from(user)
-      .where(ne(user.id, userId))
-      .orderBy(asc(user.name)),
-  ]);
+  const [own, theirs, folders, links, people, accounts, mine] =
+    await Promise.all([
+      db
+        .select(columns)
+        .from(items)
+        .where(eq(items.userId, userId))
+        .orderBy(asc(items.title)),
+      db
+        .selectDistinct({ ...columns, savedBy: user.name })
+        .from(items)
+        .innerJoin(user, eq(user.id, items.userId))
+        .innerJoin(collectionItems, eq(collectionItems.itemId, items.id))
+        .innerJoin(
+          collections,
+          eq(collections.id, collectionItems.collectionId),
+        )
+        .where(and(ne(items.userId, userId), reach))
+        .orderBy(asc(items.title)),
+      db
+        .select({
+          id: collections.id,
+          name: collections.name,
+          creatorId: collections.userId,
+          creator: user.name,
+        })
+        .from(collections)
+        .innerJoin(user, eq(user.id, collections.userId))
+        .where(reach)
+        .orderBy(asc(collections.name)),
+      db
+        .select({
+          collectionId: collectionItems.collectionId,
+          itemId: collectionItems.itemId,
+        })
+        .from(collectionItems)
+        .innerJoin(
+          collections,
+          eq(collections.id, collectionItems.collectionId),
+        )
+        .where(reach),
+      db
+        .select({
+          collectionId: collaborators.collectionId,
+          id: user.id,
+          name: user.name,
+        })
+        .from(collaborators)
+        .innerJoin(user, eq(user.id, collaborators.userId))
+        .innerJoin(collections, eq(collections.id, collaborators.collectionId))
+        .where(reach)
+        .orderBy(asc(user.name)),
+      // For the Creator's picker: the instance is a small invited circle, so
+      // every account holder may see every other's name and email.
+      db
+        .select({ id: user.id, name: user.name, email: user.email })
+        .from(user)
+        .where(ne(user.id, userId))
+        .orderBy(asc(user.name)),
+      // Your own tags only, used or not; a Collaborator's stay theirs.
+      db
+        .select({ name: tags.name })
+        .from(tags)
+        .where(eq(tags.userId, userId))
+        .orderBy(asc(tags.name)),
+    ]);
 
   return {
     items: [...own.map((i) => ({ ...i, savedBy: null })), ...theirs].sort(
@@ -120,5 +135,6 @@ export async function loadStash(userId: string): Promise<{
         .map(({ id, name }) => ({ id, name })),
     })),
     accounts,
+    tags: mine.map((t) => t.name),
   };
 }

@@ -24,6 +24,7 @@ export default async function StashPage() {
       items={stash.items}
       collections={stash.collections}
       accounts={stash.accounts}
+      tags={stash.tags}
       name={session.user.name}
       isOwner={session.user.isOwner}
       initialWide={jar.get("wide")?.value === "1"}

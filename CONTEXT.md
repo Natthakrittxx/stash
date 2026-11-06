@@ -43,3 +43,7 @@ _Avoid_: Member, participant, guest
 **Shared collection**:
 A collection with at least one Collaborator. The only way anything in one account's stash becomes visible to another; it stops being shared when the last Collaborator goes.
 _Avoid_: Group, team, workspace, shared stash
+
+**Tag**:
+A lowercase word one account uses to label its own items. It exists apart from any item: it can be made before an item uses it, and it stays, unused, until that account deletes it.
+_Avoid_: Label, category, keyword
