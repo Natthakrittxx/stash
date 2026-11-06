@@ -128,6 +128,23 @@ export const collaborators = stashSchema.table(
   ],
 );
 
+// One account's tags, so a tag can exist before any item carries it. Items
+// still keep the names in their own `tags` array (ADR 0004); a rename or delete
+// rewrites those arrays in the same transaction.
+export const tags = stashSchema.table(
+  "tags",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.name] })],
+);
+
 export const user = stashSchema.table(
   "user",
   {

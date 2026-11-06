@@ -7,6 +7,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useId,
   useMemo,
   useOptimistic,
   useRef,
@@ -15,7 +16,15 @@ import {
   useTransition,
 } from "react";
 
-import { looksLikeLink, text, titleOr } from "~/form";
+import {
+  looksLikeLink,
+  suggestTags,
+  tagOf,
+  tagProblem,
+  tagsFrom,
+  text,
+  titleOr,
+} from "~/form";
 import {
   areaOf,
   type Bounds,
@@ -38,11 +47,14 @@ import { ThemeToggle } from "../theme-toggle";
 import {
   createCollection,
   createItem,
+  createTag,
   deleteCollection,
   deleteItem,
+  deleteTag,
   addCollaborator,
   leaveCollection,
   removeCollaborator,
+  renameTag,
   setMembership,
   setPlacePin,
   updateItem,
@@ -110,7 +122,9 @@ type Failure = { message: string; field?: string };
 type Patch =
   | { type: "add"; item: Item }
   | { type: "update"; item: Item }
-  | { type: "delete"; id: string };
+  | { type: "delete"; id: string }
+  // A tag renamed (or, with `to` null, deleted) on every one of your items.
+  | { type: "retag"; from: string; to: string | null };
 
 const byTitle = (a: Item, b: Item) => a.title.localeCompare(b.title);
 
@@ -142,7 +156,31 @@ function reduce(list: Item[], patch: Patch): Item[] {
         .sort(byTitle);
     case "delete":
       return list.filter((i) => i.id !== patch.id);
+    case "retag": {
+      const { from, to } = patch;
+      return list.map((i) =>
+        i.savedBy !== null || !i.tags.includes(from)
+          ? i
+          : {
+              ...i,
+              tags: [
+                ...new Set(
+                  i.tags.flatMap((t) => (t !== from ? [t] : to ? [to] : [])),
+                ),
+              ],
+            },
+      );
+    }
   }
+}
+
+// Your own tags, used or not (ADR 0004).
+function reduceTags(
+  list: string[],
+  patch: { from: string; to: string | null },
+) {
+  const rest = list.filter((t) => t !== patch.from);
+  return patch.to && !rest.includes(patch.to) ? [...rest, patch.to] : rest;
 }
 
 /** The saved URL may still be a bare host until the server normalizes it. */
@@ -181,10 +219,7 @@ function draftFrom(formData: FormData, id: string): Item {
     // shows its monogram fallback.
     image: null,
     description: text(formData, "description"),
-    tags: text(formData, "tags")
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean),
+    tags: tagsFrom(text(formData, "tags")).slice(0, TAGS_PER_ITEM),
   };
 }
 
@@ -267,6 +302,7 @@ export function Stash({
   items: initial,
   collections: initialCollections,
   accounts,
+  tags: initialTags,
   name,
   isOwner,
   initialWide,
@@ -275,6 +311,7 @@ export function Stash({
   items: Item[];
   collections: Collection[];
   accounts: Account[];
+  tags: string[];
   name: string;
   isOwner: boolean;
   initialWide: boolean;
@@ -301,7 +338,8 @@ export function Stash({
   } | null>(null);
   const [error, setError] = useState<Failure | null>(null);
   const [undo, setUndo] = useState<Item | null>(null);
-  const [saved, setSaved] = useState<{ title: string } | null>(null);
+  // A receipt that lapses on its own: a save, or a tag made or deleted.
+  const [saved, setSaved] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Places. A collection is where you are inside Places, like a tab.
@@ -309,6 +347,9 @@ export function Stash({
     initialCollections,
     reduceFolders,
   );
+  const [ownTags, patchTags] = useOptimistic(initialTags, reduceTags);
+  // Tags made in the rail this visit stay in its short list until reload.
+  const [made, setMade] = useState<string[]>([]);
   const [collectionId, setCollectionId] = useState<string | null>(null);
   // The place whose card is open on the map. Separate from the selection, so
   // Esc can close the card while its pin stays selected.
@@ -496,13 +537,24 @@ export function Stash({
   );
   const scope = useMemo(() => list.filter(inScope), [list, inScope]);
 
+  // The rail's tags: everything in scope, plus your own that nothing uses yet.
   const allTags = useMemo(
     () =>
-      [...new Set(scope.flatMap((i) => i.tags))].sort((a, b) =>
+      [...new Set([...scope.flatMap((i) => i.tags), ...ownTags])].sort((a, b) =>
         a.localeCompare(b),
       ),
-    [scope],
+    [scope, ownTags],
   );
+
+  // Your own tags and how many of your items carry each: what the picker
+  // suggests, and what Rename and Delete reach. Never a Collaborator's.
+  const ownUses = useMemo(() => {
+    const m = new Map(ownTags.map((t) => [t, 0]));
+    for (const item of list)
+      if (item.savedBy === null)
+        for (const t of item.tags) m.set(t, (m.get(t) ?? 0) + 1);
+    return m;
+  }, [list, ownTags]);
 
   // Uses across the whole stash, not the search: the rail ranks by these, and
   // a ranking that reshuffled on every keystroke would be unusable.
@@ -557,9 +609,10 @@ export function Stash({
 
   // The rail shows the tags the current search can still reach, plus the active
   // one so a selection is always clearable even after a search excludes it.
-  const railTags = allTags.filter(
-    (t) => (tagCounts.get(t) ?? 0) > 0 || t === activeTag,
-  );
+  // With no search, an unused tag lists too, at 0, so a new one shows at once.
+  const railTags = q
+    ? allTags.filter((t) => (tagCounts.get(t) ?? 0) > 0 || t === activeTag)
+    : allTags;
 
   const activeFilters =
     (tab === "all" ? 0 : 1) + (activeTag ? 1 : 0) + (collection ? 1 : 0);
@@ -586,6 +639,8 @@ export function Stash({
       tagTotals={tagTotals}
       activeTag={activeTag}
       onTag={setActiveTag}
+      made={made}
+      onCreateTag={onCreateTag}
     />
   );
   // Whether the kind tabs exist in the DOM right now: aria references to them
@@ -781,6 +836,41 @@ export function Stash({
     return result.id;
   }
 
+  async function onCreateTag(raw: string) {
+    const name = tagOf(raw);
+    if (ownUses.has(name)) {
+      setSaved(`You already have “${name}”`);
+      return name;
+    }
+    const result = await createTag(name);
+    if (result.error) {
+      setError({ message: result.error });
+      return undefined;
+    }
+    setMade((m) => [...m, name]);
+    setSaved(`Made tag “${name}”`);
+    return name;
+  }
+
+  // Rename and delete reach only your items; the filter follows a rename and
+  // clears on a delete. Focus lands on the renamed tag's actions, or search.
+  function onRetag(from: string, to: string | null) {
+    setActiveTag(to);
+    requestAnimationFrame(() =>
+      (to ? document.getElementById("tag-rename") : searchRef.current)?.focus(),
+    );
+    startTransition(async () => {
+      patch({ type: "retag", from, to });
+      patchTags({ from, to });
+      const result = to ? await renameTag(from, to) : await deleteTag(from);
+      // The items and tags roll back on their own; the filter must follow.
+      if (result.error) {
+        setActiveTag(from);
+        setError({ message: result.error });
+      } else if (!to) setSaved(`Deleted tag “${from}”`);
+    });
+  }
+
   function onToggleMember(cid: string, itemId: string, member: boolean) {
     startTransition(async () => {
       patchFolders({ type: "member", collectionId: cid, itemId, member });
@@ -886,7 +976,7 @@ export function Stash({
     // names it, since the alphabetical list may have filed it off-screen.
     if (result.id && draft.kind === "place") selectPlace(result.id);
     else if (result.id && draft.kind === "tool") setSelectedId(result.id);
-    setSaved({ title: draft.title });
+    setSaved(`Saved “${draft.title}”`);
     closeComposer(true);
 
     const id = result.id ?? target?.id;
@@ -1214,7 +1304,7 @@ export function Stash({
           </div>
 
           {hasItems && (
-            <div className="text-label text-muted mt-2 flex items-baseline gap-3">
+            <div className="text-label text-muted mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <p
                 id="search-summary"
                 role="status"
@@ -1239,6 +1329,14 @@ export function Stash({
                 >
                   Clear
                 </button>
+              )}
+              {activeTag && ownUses.has(activeTag) && (
+                <TagActions
+                  key={activeTag}
+                  tag={activeTag}
+                  uses={ownUses}
+                  onRetag={(to) => onRetag(activeTag, to)}
+                />
               )}
             </div>
           )}
@@ -1496,6 +1594,7 @@ export function Stash({
             error={error}
             formRef={formRef}
             firstRef={firstRef}
+            tagUses={ownUses}
             onCancel={() => closeComposer()}
             onDiscard={discardDraft}
             onSubmit={onSubmit}
@@ -1555,7 +1654,8 @@ export function Stash({
           {saved && (
             <div className={toast}>
               <span className="text-label text-ink min-w-0 truncate">
-                <span aria-hidden="true">✓ </span>Saved “{saved.title}”
+                <span aria-hidden="true">✓ </span>
+                {saved}
               </span>
             </div>
           )}
@@ -1660,8 +1760,8 @@ const TAG_LIMIT = 10;
 // The card-catalog drawer: the two filter axes as one quiet rail. A vertical
 // column on desktop (where it earns the width a stretched search box couldn't);
 // above the list, wrapping into chips, on narrow screens. Kind is the fixed
-// facet on top; Tags, the open-ended one, follows and only appears once a tag
-// exists. Accent + ✓ marks the active filter — never color alone, never more
+// facet on top; Tags, the open-ended one, follows, with "+ New tag" to make one
+// before anything carries it. Accent + ✓ marks the active filter — never color alone, never more
 // than a sliver of the screen. The quiet sans headings are the app's voice
 // naming each axis: sentence-case and muted, not the tracked-uppercase eyebrow
 // the bans forbid, and each labels its group via aria-labelledby.
@@ -1678,6 +1778,8 @@ function FilterRail({
   tagTotals,
   activeTag,
   onTag,
+  made,
+  onCreateTag,
 }: {
   tab: Tab;
   onTab: (tab: Tab) => void;
@@ -1691,6 +1793,8 @@ function FilterRail({
   tagTotals: Map<string, number>;
   activeTag: string | null;
   onTag: (tag: string | null) => void;
+  made: string[];
+  onCreateTag: (name: string) => Promise<string | undefined>;
 }) {
   const [showAll, setShowAll] = useState(false);
   // Most used first (across the whole stash, so it holds still while you type),
@@ -1704,7 +1808,9 @@ function FilterRail({
   const shown =
     showAll || !collapsible
       ? ranked
-      : ranked.filter((t, i) => i < TAG_LIMIT || t === activeTag);
+      : ranked.filter(
+          (t, i) => i < TAG_LIMIT || t === activeTag || made.includes(t),
+        );
 
   return (
     <nav aria-label="Filters" className="flex flex-col gap-6">
@@ -1754,11 +1860,11 @@ function FilterRail({
         />
       </div>
 
-      {tags.length > 0 && (
-        <div>
-          <h2 id="rail-tags" className={railHeading}>
-            Tags
-          </h2>
+      <div>
+        <h2 id="rail-tags" className={railHeading}>
+          Tags
+        </h2>
+        {tags.length > 0 && (
           <div
             id="rail-tag-list"
             role="group"
@@ -1778,19 +1884,27 @@ function FilterRail({
               );
             })}
           </div>
-          {collapsible && (
-            <button
-              type="button"
-              aria-expanded={showAll}
-              aria-controls="rail-tag-list"
-              onClick={() => setShowAll(!showAll)}
-              className={`${quietButton} hover:text-ink mt-1 underline underline-offset-2`}
-            >
-              {showAll ? "Show fewer tags" : `Show all ${ranked.length} tags`}
-            </button>
-          )}
-        </div>
-      )}
+        )}
+        {collapsible && (
+          <button
+            type="button"
+            aria-expanded={showAll}
+            aria-controls="rail-tag-list"
+            onClick={() => setShowAll(!showAll)}
+            className={`${quietButton} hover:text-ink mt-1 underline underline-offset-2`}
+          >
+            {showAll ? "Show fewer tags" : `Show all ${ranked.length} tags`}
+          </button>
+        )}
+        <NewCollection
+          label="New tag"
+          noun="tag"
+          maxLength={32}
+          check={(name) => tagProblem(tagOf(name))}
+          onCreate={onCreateTag}
+          className="mt-1"
+        />
+      </div>
     </nav>
   );
 }
@@ -1841,6 +1955,396 @@ function FilterRow({
   );
 }
 
+// The most tags one item takes; the server keeps the first ten it is sent.
+const TAGS_PER_ITEM = 10;
+
+// The item form's tags: what is picked as chips in one field-edged box, and
+// your own tags as a flat line beneath it, most used first. An ARIA 1.2
+// combobox whose listbox is that line. It never pops up, so Esc keeps closing
+// the composer. Tags travel as one comma-separated hidden field, so drafts,
+// undo and the server's parsing stay as they were.
+function TagPicker({
+  uses,
+  initial,
+  invalid,
+}: {
+  uses: Map<string, number>;
+  initial: string;
+  invalid: Record<string, unknown>;
+}) {
+  const [picked, setPicked] = useState(() => tagsFrom(initial));
+  const [typed, setTyped] = useState("");
+  const [active, setActive] = useState(-1);
+  const [said, setSaid] = useState("");
+  const [tooLong, setTooLong] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const id = useId();
+  const full = picked.length >= TAGS_PER_ITEM;
+  const { matches, create } = suggestTags(uses, picked, typed);
+  const options = full ? [] : create ? [...matches, create] : matches;
+
+  function add(raw: string) {
+    const names = tagsFrom(raw);
+    // Pasting gets past the field's maxLength; say what was left out.
+    const long = names.find((t) => tagProblem(t));
+    setTooLong(long ?? null);
+    const next = names.filter((t) => !picked.includes(t) && !tagProblem(t));
+    setTyped("");
+    setActive(-1);
+    if (next.length === 0 || full) return;
+    const kept = next.slice(0, TAGS_PER_ITEM - picked.length);
+    setPicked([...picked, ...kept]);
+    setSaid(`Added ${kept.join(", ")}`);
+  }
+
+  function remove(tag: string) {
+    setPicked(picked.filter((t) => t !== tag));
+    setSaid(`Removed ${tag}`);
+    inputRef.current?.focus();
+  }
+
+  return (
+    <div className={fieldLabel}>
+      <span id={`${id}-label`}>Tags</span>
+      <input
+        type="hidden"
+        name="tags"
+        // A tag typed but not yet added still saves with the item.
+        value={tagsFrom([...picked, typed].join(","))
+          .slice(0, TAGS_PER_ITEM)
+          .join(", ")}
+      />
+      {/* A click on the box's empty space puts the cursor in it. */}
+      <div
+        onClick={(e) =>
+          e.target === e.currentTarget && inputRef.current?.focus()
+        }
+        className={`bg-bg flex flex-wrap items-center gap-1.5 rounded border px-2 py-1.5 font-normal focus-within:ring-1 ${
+          invalid["aria-invalid"]
+            ? "border-danger focus-within:ring-danger"
+            : "border-field focus-within:border-accent focus-within:ring-accent"
+        }`}
+      >
+        {picked.map((tag) => {
+          const fresh = !uses.has(tag);
+          return (
+            <span
+              key={tag}
+              // A tag this save will make has a dashed edge: shape, not color.
+              className={`bg-surface text-label text-ink inline-flex items-center rounded border pl-2 ${
+                fresh ? "border-field border-dashed" : "border-transparent"
+              }`}
+            >
+              <span lang={langOf(tag)}>{tag}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${tag}${fresh ? ", new tag" : ""}`}
+                onClick={() => remove(tag)}
+                className={`text-muted hover:text-ink inline-flex items-center justify-center rounded px-1.5 py-0.5 pointer-coarse:min-w-11 ${touch} ${focusRing}`}
+              >
+                <span aria-hidden="true">✕</span>
+              </button>
+            </span>
+          );
+        })}
+        <input
+          ref={inputRef}
+          data-field="tags"
+          role="combobox"
+          aria-labelledby={`${id}-label`}
+          aria-controls={`${id}-list`}
+          aria-expanded={options.length > 0}
+          aria-autocomplete="list"
+          aria-activedescendant={
+            active >= 0 ? `${id}-option-${active}` : undefined
+          }
+          {...invalid}
+          value={typed}
+          readOnly={full}
+          maxLength={32}
+          placeholder={picked.length === 0 ? "Add a tag" : undefined}
+          autoComplete="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          onChange={(e) => {
+            const value = e.target.value;
+            setActive(-1);
+            // A comma ends a tag, typed or pasted, on any keyboard.
+            if (!value.includes(",")) {
+              setTooLong(null);
+              return setTyped(value);
+            }
+            const parts = value.split(",");
+            const rest = parts.pop() ?? "";
+            add(parts.join(","));
+            setTyped(rest.trimStart());
+          }}
+          onPaste={(e) => {
+            const pasted = e.clipboardData.getData("text");
+            if (!pasted.includes(",")) return;
+            e.preventDefault();
+            add(`${typed},${pasted}`);
+          }}
+          onKeyDown={(e) => {
+            // Mid-composition (Thai, Japanese) Enter picks a character.
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              if (options.length === 0) return;
+              e.preventDefault();
+              const last = options.length - 1;
+              setActive((a) =>
+                e.key === "ArrowDown"
+                  ? a >= last
+                    ? 0
+                    : a + 1
+                  : a <= 0
+                    ? last
+                    : a - 1,
+              );
+            } else if (e.key === "Enter") {
+              const pick = active >= 0 ? options[active] : typed;
+              // Nothing to add: Enter saves the item, as in every field.
+              if (!pick?.trim()) return;
+              e.preventDefault();
+              add(pick);
+            } else if (e.key === "Backspace" && typed === "" && picked.length) {
+              e.preventDefault();
+              remove(picked[picked.length - 1]!);
+            }
+          }}
+          className="text-body text-ink placeholder:text-muted min-w-24 flex-1 bg-transparent py-0.5 outline-none pointer-coarse:text-base"
+        />
+      </div>
+      {tooLong && (
+        <p role="alert" className="text-label text-danger font-normal">
+          <span aria-hidden="true">✕ </span>“{tooLong.slice(0, 32)}…” is over 32
+          characters, so it wasn&apos;t added.
+        </p>
+      )}
+      {full ? (
+        <p className="text-label text-muted font-normal">
+          {TAGS_PER_ITEM} tags is the most one item takes.
+        </p>
+      ) : null}
+      <ul
+        id={`${id}-list`}
+        role="listbox"
+        aria-labelledby={`${id}-label`}
+        hidden={options.length === 0}
+        className="text-label flex flex-wrap items-center gap-x-1 gap-y-0.5 font-normal"
+      >
+        {options.map((name, i) => {
+          const making = name === create && i === options.length - 1;
+          const n = uses.get(name) ?? 0;
+          return (
+            <li
+              key={making ? `create:${name}` : name}
+              id={`${id}-option-${i}`}
+              role="option"
+              aria-selected={i === active}
+              // Keep the cursor in the field: a pick is not a focus move.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => add(name)}
+              className={`inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 ${touch} ${
+                // The cursor stays in the field, so the active option takes the
+                // focus outline itself: never the ground alone.
+                i === active
+                  ? "bg-surface text-ink outline-accent outline-2 outline-offset-2"
+                  : "hover:bg-surface hover:text-ink"
+              } ${making ? "text-accent underline underline-offset-2" : i === active ? "" : "text-muted"}`}
+            >
+              {making ? (
+                <span>
+                  + Create “<span lang={langOf(name)}>{name}</span>”
+                </span>
+              ) : (
+                <>
+                  <span lang={langOf(name)}>{name}</span>
+                  {n > 0 && <span className="tabular-nums">{n}</span>}
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <span aria-live="polite" className="sr-only">
+        {said}
+      </span>
+    </div>
+  );
+}
+
+const ofYours = (n: number) =>
+  n === 1 ? "one of your items" : `${n} of your items`;
+
+// A tag's Rename and Delete, beside the result line that names it: your own
+// tags only, since a Collaborator's tag is theirs (ADR 0004). Both confirm in
+// place, like Delete collection; renaming onto another of your tags merges them.
+function TagActions({
+  tag,
+  uses,
+  onRetag,
+}: {
+  tag: string;
+  uses: Map<string, number>;
+  onRetag: (to: string | null) => void;
+}) {
+  const [mode, setMode] = useState<"idle" | "rename" | "delete">("idle");
+  const [to, setTo] = useState(tag);
+  const [error, setError] = useState<string | null>(null);
+  const id = useId();
+  const count = uses.get(tag) ?? 0;
+  const target = tagOf(to);
+  const merging = target !== tag && uses.has(target);
+
+  function cancel() {
+    const back = mode === "rename" ? "tag-rename" : "tag-delete";
+    setMode("idle");
+    setTo(tag);
+    setError(null);
+    requestAnimationFrame(() => document.getElementById(back)?.focus());
+  }
+
+  if (mode === "idle")
+    return (
+      // -my-1: the quiet buttons' padding must not make the result line taller.
+      <div className="-my-1 -mr-2 ml-auto flex shrink-0 gap-1">
+        <button
+          id="tag-rename"
+          type="button"
+          onClick={() => setMode("rename")}
+          className={`${quietButton} hover:text-ink`}
+        >
+          Rename tag
+        </button>
+        <button
+          id="tag-delete"
+          type="button"
+          onClick={() => setMode("delete")}
+          className={`${quietButton} hover:text-danger`}
+        >
+          Delete tag
+        </button>
+      </div>
+    );
+
+  if (mode === "delete")
+    return (
+      <div
+        onKeyDown={(e) => {
+          if (e.key !== "Escape") return;
+          e.preventDefault();
+          e.stopPropagation();
+          cancel();
+        }}
+        className="flex basis-full flex-wrap items-center gap-x-3 gap-y-1"
+      >
+        <span id={`${id}-question`} className="text-ink">
+          Delete “<span lang={langOf(tag)}>{tag}</span>”?{" "}
+          {count === 0
+            ? "Nothing carries it yet."
+            : count === 1
+              ? "It comes off one of your items; the item stays."
+              : `It comes off ${count} of your items; the items stay.`}
+        </span>
+        <button
+          type="button"
+          // The button that opened this is gone; the decision is the next step.
+          autoFocus
+          aria-describedby={`${id}-question`}
+          onClick={() => onRetag(null)}
+          className={`text-danger rounded font-medium underline underline-offset-2 ${touch} ${focusRing}`}
+        >
+          Delete
+        </button>
+        <button
+          type="button"
+          onClick={cancel}
+          className={`${quietButton} hover:text-ink -ml-2`}
+        >
+          Cancel
+        </button>
+      </div>
+    );
+
+  return (
+    <form
+      noValidate
+      data-protonpass-ignore=""
+      className="flex basis-full flex-col gap-1"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const problem = tagProblem(target);
+        if (problem) return setError(problem);
+        if (target === tag) return cancel();
+        onRetag(target);
+      }}
+    >
+      <label htmlFor={`${id}-to`} className="text-ink">
+        Rename “<span lang={langOf(tag)}>{tag}</span>” to
+      </label>
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <input
+            id={`${id}-to`}
+            name="tag"
+            autoFocus
+            maxLength={32}
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              setError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              e.preventDefault();
+              e.stopPropagation();
+              cancel();
+            }}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={
+              error ? `${id}-error` : merging ? `${id}-merge` : undefined
+            }
+            className={`${field} py-1`}
+          />
+        </div>
+        <button
+          type="submit"
+          className={`text-accent shrink-0 rounded font-medium underline underline-offset-2 ${touch} ${focusRing}`}
+        >
+          {merging ? "Merge" : "Rename"}
+        </button>
+        <button
+          type="button"
+          onClick={cancel}
+          className={`${quietButton} hover:text-ink -ml-2 shrink-0`}
+        >
+          Cancel
+        </button>
+      </div>
+      {merging && !error && (
+        <p id={`${id}-merge`}>
+          Merges into “<span lang={langOf(target)}>{target}</span>”
+          {uses.get(target)
+            ? `, already on ${ofYours(uses.get(target)!)}.`
+            : ", which you already have."}
+        </p>
+      )}
+      {error && (
+        <p id={`${id}-error`} role="alert" className="text-danger">
+          <span aria-hidden="true">✕ </span>
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+
 function ComposerForm({
   collection,
   placesView,
@@ -1850,6 +2354,7 @@ function ComposerForm({
   error,
   formRef,
   firstRef,
+  tagUses,
   onCancel,
   onDiscard,
   onSubmit,
@@ -1862,6 +2367,7 @@ function ComposerForm({
   error: Failure | null;
   formRef: React.RefObject<HTMLFormElement | null>;
   firstRef: React.RefObject<HTMLElement | null>;
+  tagUses: Map<string, number>;
   onCancel: () => void;
   onDiscard: () => void;
   onSubmit: (formData: FormData) => Promise<void>;
@@ -1909,7 +2415,11 @@ function ComposerForm({
     if (!name) return;
     if (["title", "description", "tags"].includes(name)) setDetails(true);
     requestAnimationFrame(() =>
-      formRef.current?.querySelector<HTMLElement>(`[name="${name}"]`)?.focus(),
+      formRef.current
+        ?.querySelector<HTMLElement>(
+          `[name="${name}"]:not([type="hidden"]), [data-field="${name}"]`,
+        )
+        ?.focus(),
     );
   }, [error, formRef]);
 
@@ -2104,20 +2614,11 @@ function ComposerForm({
             />
           </label>
 
-          <label className={fieldLabel}>
-            <span>
-              Tags{" "}
-              <span className="text-muted font-normal">(comma separated)</span>
-            </span>
-            <input
-              name="tags"
-              defaultValue={defaults.tags}
-              placeholder="git, ssh"
-              autoCapitalize="off"
-              {...invalid("tags")}
-              className={field}
-            />
-          </label>
+          <TagPicker
+            uses={tagUses}
+            initial={defaults.tags ?? ""}
+            invalid={invalid("tags")}
+          />
         </div>
 
         {shown && shown.field !== main && <ErrorLine message={shown.message} />}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { areaOf, isMapsLink } from "~/maps";
 
@@ -403,18 +403,35 @@ export function NewCollection({
   label,
   onCreate,
   className = "",
+  noun = "collection",
+  maxLength = 80,
+  check,
 }: {
   label: string;
   onCreate: (name: string) => Promise<string | undefined>;
   className?: string;
+  // The rail's "+ New tag" is the same row, naming a tag instead.
+  noun?: "collection" | "tag";
+  maxLength?: number;
+  check?: (name: string) => string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, startSaving] = useTransition();
+  const Noun = noun === "tag" ? "Tag" : "Collection";
+  // Enter and Esc hand focus back to the button; clicking away leaves it be.
+  const refocus = useRef(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (open || !refocus.current) return;
+    refocus.current = false;
+    buttonRef.current?.focus();
+  }, [open]);
 
   if (!open)
     return (
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen(true)}
         className={`${quietButton} text-accent underline underline-offset-2 ${className}`}
@@ -433,15 +450,19 @@ export function NewCollection({
       className={`mt-0.5 flex flex-col gap-1 ${className}`}
       onSubmit={(event) => {
         event.preventDefault();
+        if (saving) return;
         const input = event.currentTarget.elements.namedItem(
-          "collection",
+          noun,
         ) as HTMLInputElement;
         const name = input.value.trim();
-        if (!name) return setError("Name the collection first.");
+        if (!name) return setError(`Name the ${noun} first.`);
+        const problem = check?.(name);
+        if (problem) return setError(problem);
         startSaving(async () => {
           const id = await onCreate(name);
           if (!id)
-            return setError("That collection couldn't be saved. Try again.");
+            return setError(`That ${noun} couldn't be saved. Try again.`);
+          refocus.current = true;
           setOpen(false);
           setError(null);
         });
@@ -462,18 +483,19 @@ export function NewCollection({
         <input
           // Not "name": password managers read a lone "name" field as a login
           // and badge it for autofill. This is a label for a trip, not a person.
-          name="collection"
+          name={noun}
           autoComplete="off"
           data-1p-ignore
           data-lpignore="true"
           // The one field that appears on demand: put the cursor in it.
           autoFocus
-          maxLength={80}
-          aria-label="Collection name"
+          maxLength={maxLength}
+          aria-label={`${Noun} name`}
           aria-invalid={error ? true : undefined}
-          aria-describedby={error ? "new-collection-error" : undefined}
-          placeholder="Collection name"
-          disabled={saving}
+          aria-describedby={error ? `new-${noun}-error` : undefined}
+          placeholder={`${Noun} name`}
+          // Read-only, not disabled, so focus stays put while it saves.
+          readOnly={saving}
           onChange={() => setError(null)}
           // Clicking away from an empty field puts the "+ New" button back.
           onBlur={(e) => {
@@ -485,6 +507,7 @@ export function NewCollection({
             if (e.key !== "Escape") return;
             e.preventDefault();
             e.stopPropagation();
+            refocus.current = true;
             setOpen(false);
             setError(null);
           }}
@@ -493,7 +516,7 @@ export function NewCollection({
       </div>
       {error && (
         <p
-          id="new-collection-error"
+          id={`new-${noun}-error`}
           role="alert"
           className="text-label text-danger"
         >

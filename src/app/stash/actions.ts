@@ -1,11 +1,11 @@
 "use server";
 
-import { and, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, arrayContains, eq, gt, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 
-import { text, titleOr } from "~/form";
+import { tagOf, tagProblem, tagsFrom, text, titleOr } from "~/form";
 import { isMapsLink } from "~/maps";
 import { getSession } from "~/server/better-auth/server";
 import { db } from "~/server/db";
@@ -14,6 +14,7 @@ import {
   collectionItems,
   collections,
   items,
+  tags,
   user,
 } from "~/server/db/schema";
 import { spendFetch } from "~/server/fetch-budget";
@@ -48,14 +49,8 @@ const urlField = z
 
 const tagsField = z
   .string()
-  .transform((value) =>
-    value
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean)
-      .slice(0, 10),
-  )
-  .pipe(z.array(z.string().max(32)));
+  .transform((value) => tagsFrom(value).slice(0, 10))
+  .pipe(z.array(z.string().max(32, "32 characters at most.")));
 
 const shared = {
   title: z.string().trim().max(200),
@@ -176,6 +171,15 @@ function resolvePreview(
   });
 }
 
+// A name typed on an item becomes one of the account's tags (ADR 0004).
+async function keepTags(userId: string, names: string[]) {
+  if (names.length === 0) return;
+  await db
+    .insert(tags)
+    .values(names.map((name) => ({ userId, name })))
+    .onConflictDoNothing();
+}
+
 async function requireUserId(): Promise<string> {
   const session = await getSession();
   if (!session) throw new Error("Not signed in.");
@@ -218,6 +222,7 @@ export async function createItem(formData: FormData): Promise<Result> {
     .insert(items)
     .values({ userId, ...row, ...place })
     .returning({ id: items.id });
+  await keepTags(userId, row.tags);
 
   // Saved with a collection open (or undone out of some): file it there too,
   // but only into collections the caller is in.
@@ -286,6 +291,7 @@ export async function updateItem(
   // the fetch below still ran, so any signed-in account owning no items could
   // loop this action to make the server fetch arbitrary URLs.
   if (updated.length === 0) return { error: "No such item." };
+  await keepTags(userId, row.tags);
 
   revalidatePath("/stash");
   resolvePreview(target.data, userId, row);
@@ -367,6 +373,87 @@ export async function deleteCollection(id: string): Promise<Result> {
     .where(
       and(eq(collections.id, target.data), eq(collections.userId, userId)),
     );
+
+  revalidatePath("/stash");
+  return {};
+}
+
+const tagName = z
+  .string()
+  .transform(tagOf)
+  .superRefine((name, ctx) => {
+    const problem = tagProblem(name);
+    if (problem)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+  });
+
+// Made ahead of any item. A name you already have changes nothing.
+export async function createTag(name: string): Promise<Result> {
+  const userId = await requireUserId();
+  const parsed = tagName.safeParse(name);
+  if (!parsed.success) return invalid(parsed.error);
+
+  await db
+    .insert(tags)
+    .values({ userId, name: parsed.data })
+    .onConflictDoNothing();
+
+  revalidatePath("/stash");
+  return {};
+}
+
+// Changes the name on every one of the caller's items too, and on nobody
+// else's: a Collaborator's "js" is their own tag (ADR 0004).
+export async function renameTag(from: string, to: string): Promise<Result> {
+  const userId = await requireUserId();
+  const was = tagName.safeParse(from);
+  if (!was.success) return { error: "No such tag." };
+  const next = tagName.safeParse(to);
+  if (!next.success) return invalid(next.error);
+  const old = was.data;
+  if (old === next.data) return {};
+
+  // Onto a name the caller already has, the two merge: one row, and each item
+  // carries the name once, where the first of the two stood.
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(tags)
+      .values({ userId, name: next.data })
+      .onConflictDoNothing();
+    await tx
+      .delete(tags)
+      .where(and(eq(tags.userId, userId), eq(tags.name, old)));
+    await tx
+      .update(items)
+      .set({
+        tags: sql`array(
+          select t from unnest(array_replace(${items.tags}, ${old}::text, ${next.data}::text))
+            with ordinality as u(t, i)
+          group by t order by min(i))`,
+      })
+      .where(and(eq(items.userId, userId), arrayContains(items.tags, [old])));
+  });
+
+  revalidatePath("/stash");
+  return {};
+}
+
+// The tag comes off the caller's items; the items stay.
+export async function deleteTag(name: string): Promise<Result> {
+  const userId = await requireUserId();
+  const parsed = tagName.safeParse(name);
+  if (!parsed.success) return { error: "No such tag." };
+  const gone = parsed.data;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(tags)
+      .where(and(eq(tags.userId, userId), eq(tags.name, gone)));
+    await tx
+      .update(items)
+      .set({ tags: sql`array_remove(${items.tags}, ${gone}::text)` })
+      .where(and(eq(items.userId, userId), arrayContains(items.tags, [gone])));
+  });
 
   revalidatePath("/stash");
   return {};
