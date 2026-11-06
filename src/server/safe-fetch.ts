@@ -66,7 +66,10 @@ export async function safeFetch(
     }
     // URL keeps the brackets on an IPv6 literal; the resolver doesn't want them.
     const addresses = await lookup(url.hostname.replace(/^\[|\]$/g, ""));
-    if (!addresses.length || !addresses.every((a) => isPublicAddress(a.address))) {
+    if (
+      !addresses.length ||
+      !addresses.every((a) => isPublicAddress(a.address))
+    ) {
       throw new Error(`Refusing to fetch private address: ${url.hostname}`);
     }
 

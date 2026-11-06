@@ -96,9 +96,15 @@ async function freshDatabase() {
 // then collaborators and tags) plus the migration log, with nothing left in `public` or in
 // Drizzle's default schema.
 async function expectOnlyStashLayout() {
-  expect(await psql("select count(*) from pg_tables where schemaname = 'stash'")).toBe("14");
-  expect(await psql("select count(*) from pg_tables where schemaname = 'public'")).toBe("0");
-  expect(await psql("select count(*) from pg_namespace where nspname = 'drizzle'")).toBe("0");
+  expect(
+    await psql("select count(*) from pg_tables where schemaname = 'stash'"),
+  ).toBe("14");
+  expect(
+    await psql("select count(*) from pg_tables where schemaname = 'public'"),
+  ).toBe("0");
+  expect(
+    await psql("select count(*) from pg_namespace where nspname = 'drizzle'"),
+  ).toBe("0");
 }
 
 const ownerNotices = async () =>
@@ -151,7 +157,11 @@ const currentUser = async (session: string) => {
 };
 
 // A no-JavaScript form post: what a browser submits for a server action.
-const submit = (actionId: string, session?: string, fields: Record<string, string> = {}) => {
+const submit = (
+  actionId: string,
+  session?: string,
+  fields: Record<string, string> = {},
+) => {
   const form = new FormData();
   form.set(`$ACTION_ID_${actionId}`, "");
   for (const [key, value] of Object.entries(fields)) form.set(key, value);
@@ -166,7 +176,9 @@ const submit = (actionId: string, session?: string, fields: Record<string, strin
 const invitesPage = async (session: string) => {
   const html = await (await get("/invites", session)).text();
   return {
-    actions: [...html.matchAll(/name="\$ACTION_ID_([^"]+)"/g)].map((m) => m[1]!),
+    actions: [...html.matchAll(/name="\$ACTION_ID_([^"]+)"/g)].map(
+      (m) => m[1]!,
+    ),
     codes: [...html.matchAll(/name="code" value="([^"]+)"/g)].map((m) => m[1]!),
   };
 };
@@ -219,11 +231,21 @@ describe("a fresh instance", () => {
   }, 5 * MINUTES);
 
   test("generates its own auth secret and keeps it out of the file", async () => {
-    const stat = await compose("exec", "-T", "app", "stat", "-c", "%a %s", "/data/auth-secret");
+    const stat = await compose(
+      "exec",
+      "-T",
+      "app",
+      "stat",
+      "-c",
+      "%a %s",
+      "/data/auth-secret",
+    );
     const [mode, size] = stat.trim().split(" ");
     expect(mode).toBe("600");
     expect(Number(size)).toBeGreaterThan(32);
-    expect(readFileSync("compose.yml", "utf8")).not.toContain("BETTER_AUTH_SECRET");
+    expect(readFileSync("compose.yml", "utf8")).not.toContain(
+      "BETTER_AUTH_SECRET",
+    );
   });
 
   test("keeps all its tables and its migration log in the stash schema", async () => {
@@ -231,16 +253,28 @@ describe("a fresh instance", () => {
   });
 
   test("the image holds no native modules, so it can be cross-built", async () => {
-    const found = await compose("exec", "-T", "app", "find", "/app/node_modules", "-name", "*.node");
+    const found = await compose(
+      "exec",
+      "-T",
+      "app",
+      "find",
+      "/app/node_modules",
+      "-name",
+      "*.node",
+    );
     expect(found.trim()).toBe("");
   });
 
-  test("says on every boot that the first signup becomes the Owner", async () => {
-    expect(await ownerNotices()).toBe(1);
-    await compose("restart", "app");
-    await waitForApp();
-    expect(await ownerNotices()).toBe(2);
-  }, 3 * MINUTES);
+  test(
+    "says on every boot that the first signup becomes the Owner",
+    async () => {
+      expect(await ownerNotices()).toBe(1);
+      await compose("restart", "app");
+      await waitForApp();
+      expect(await ownerNotices()).toBe(2);
+    },
+    3 * MINUTES,
+  );
 
   test("the signup page asks the first person for no code", async () => {
     const html = await (await get("/signup")).text();
@@ -249,11 +283,19 @@ describe("a fresh instance", () => {
   });
 
   test("the first signup needs no code and becomes the Owner, even in a race", async () => {
-    const emails = ["a", "b", "c", "d", "e"].map((name) => `${name}@example.com`);
+    const emails = ["a", "b", "c", "d", "e"].map(
+      (name) => `${name}@example.com`,
+    );
     const results = await Promise.all(emails.map((email) => signUp(email)));
     const won = results.filter((res) => res.status === 200);
     expect(won.length).toBe(1);
-    expect((await psql(`select count(*), count(*) filter (where is_owner) from "user"`)).trim()).toBe("1|1");
+    expect(
+      (
+        await psql(
+          `select count(*), count(*) filter (where is_owner) from "user"`,
+        )
+      ).trim(),
+    ).toBe("1|1");
 
     ownerEmail = emails[results.indexOf(won[0]!)]!;
     owner = sessionFrom(won[0]!);
@@ -261,20 +303,29 @@ describe("a fresh instance", () => {
   });
 
   test("after that, signup refuses no code or a wrong code", async () => {
-    for (const res of [await signUp("late@example.com"), await signUp("late@example.com", "wrong")]) {
+    for (const res of [
+      await signUp("late@example.com"),
+      await signUp("late@example.com", "wrong"),
+    ]) {
       expect(res.status).toBe(403);
-      expect(((await res.json()) as { code: string }).code).toBe("INVITE_REQUIRED");
+      expect(((await res.json()) as { code: string }).code).toBe(
+        "INVITE_REQUIRED",
+      );
     }
     expect(await (await get("/signup")).text()).toContain('name="invite"');
   });
 
-  test("the notice stops once an account exists, and sessions survive recreating the container", async () => {
-    await compose("up", "-d", "--force-recreate", "--no-deps", "app");
-    await waitForApp();
-    // Recreating replaces the logs, so any notice here would be a new one.
-    expect(await ownerNotices()).toBe(0);
-    expect(await currentUser(owner)).toBe(ownerEmail);
-  }, 3 * MINUTES);
+  test(
+    "the notice stops once an account exists, and sessions survive recreating the container",
+    async () => {
+      await compose("up", "-d", "--force-recreate", "--no-deps", "app");
+      await waitForApp();
+      // Recreating replaces the logs, so any notice here would be a new one.
+      expect(await ownerNotices()).toBe(0);
+      expect(await currentUser(owner)).toBe(ownerEmail);
+    },
+    3 * MINUTES,
+  );
 
   test("the Owner creates a code that admits one person", async () => {
     createAction = (await invitesPage(owner)).actions[0]!;
@@ -311,7 +362,9 @@ describe("a fresh instance", () => {
     await submit(createAction, owner);
     const [code] = (await invitesPage(owner)).codes;
     const results = await Promise.all(
-      ["race1", "race2", "race3", "race4"].map((n) => signUp(`${n}@example.com`, code)),
+      ["race1", "race2", "race3", "race4"].map((n) =>
+        signUp(`${n}@example.com`, code),
+      ),
     );
     expect(results.map((r) => r.status).sort()).toEqual([200, 403, 403, 403]);
   });
@@ -320,7 +373,9 @@ describe("a fresh instance", () => {
     await submit(createAction, owner);
     const [code] = (await invitesPage(owner)).codes;
     const link = `/signup?invite=${code}`;
-    expect(await (await get("/invites", owner)).text()).toContain(`${BASE}${link}`);
+    expect(await (await get("/invites", owner)).text()).toContain(
+      `${BASE}${link}`,
+    );
     expect(await (await get(link)).text()).toContain(`value="${code}"`);
     expect((await invitesPage(owner)).codes).toEqual([code!]);
     expect((await get("/signup?invite=a&invite=b")).status).toBe(200);
@@ -350,16 +405,22 @@ describe("a fresh instance", () => {
     await submit(createAction, owner);
     const [code] = (await invitesPage(owner)).codes;
     // better-auth ignores the field on signup rather than refusing the request.
-    const sneaky = sessionFrom(await signUp("sneaky@example.com", code, { isOwner: true }));
+    const sneaky = sessionFrom(
+      await signUp("sneaky@example.com", code, { isOwner: true }),
+    );
     expect((await get("/invites", sneaky)).status).toBe(404);
 
-    expect((await post("/api/auth/update-user", { isOwner: true }, member)).status).toBe(400);
+    expect(
+      (await post("/api/auth/update-user", { isOwner: true }, member)).status,
+    ).toBe(400);
     expect((await get("/invites", member)).status).toBe(404);
   });
 
   test("fonts are served by the instance itself", async () => {
     const html = await (await get("/login")).text();
-    const fonts = [...html.matchAll(/\/_next\/static\/media\/[^"]+\.woff2/g)].map((m) => m[0]);
+    const fonts = [
+      ...html.matchAll(/\/_next\/static\/media\/[^"]+\.woff2/g),
+    ].map((m) => m[0]);
     expect(fonts.length).toBeGreaterThan(0);
     expect(html).not.toContain("fonts.googleapis.com");
     const res = await get(fonts[0]!);
@@ -379,7 +440,10 @@ describe("a fresh instance", () => {
       return [res.status, new URL(res.headers.get("location")!, BASE).pathname];
     };
     expect(await target()).toEqual([307, "/login"]);
-    expect(await target("better-auth.session_token=x")).toEqual([307, "/stash"]);
+    expect(await target("better-auth.session_token=x")).toEqual([
+      307,
+      "/stash",
+    ]);
   });
 
   test("the reset command replaces a password and ends old sessions", async () => {
@@ -401,7 +465,9 @@ describe("a fresh instance", () => {
         values ('a1', '123', 'google', 'g1', now(), now());`);
     const reset = await resetPassword("Google@Example.com");
     expect(reset.code).toBe(0);
-    expect((await signIn("google@example.com", newPassword(reset.stdout))).status).toBe(200);
+    expect(
+      (await signIn("google@example.com", newPassword(reset.stdout))).status,
+    ).toBe(200);
   });
 
   test("a second factor holds at sign-in until the reset command clears it", async () => {
@@ -429,7 +495,10 @@ describe("a fresh instance", () => {
     const current = sessionFrom(verified);
 
     const held = await signIn("factor@example.com");
-    expect(((await held.json()) as { twoFactorRedirect?: boolean }).twoFactorRedirect).toBe(true);
+    expect(
+      ((await held.json()) as { twoFactorRedirect?: boolean })
+        .twoFactorRedirect,
+    ).toBe(true);
 
     const reset = await run([
       "exec",
@@ -462,12 +531,23 @@ describe("a fresh instance", () => {
   test("adding a passkey needs the password confirmed first", async () => {
     const options = "/api/auth/passkey/generate-register-options";
     expect((await get(options, owner)).status).toBe(403);
-    const wrong = await post("/api/auth/confirm-password", { password: "wrong" }, owner);
+    const wrong = await post(
+      "/api/auth/confirm-password",
+      { password: "wrong" },
+      owner,
+    );
     expect(wrong.status).toBe(400);
 
-    const right = await post("/api/auth/confirm-password", { password: "correct-horse" }, owner);
+    const right = await post(
+      "/api/auth/confirm-password",
+      { password: "correct-horse" },
+      owner,
+    );
     expect(right.status).toBe(200);
-    const proof = right.headers.getSetCookie().map((cookie) => cookie.split(";")[0]).join("; ");
+    const proof = right.headers
+      .getSetCookie()
+      .map((cookie) => cookie.split(";")[0])
+      .join("; ");
     expect((await get(options, `${owner}; ${proof}`)).status).toBe(200);
   });
 
@@ -487,8 +567,13 @@ describe("a fresh instance", () => {
       const taken = await signUp("taken@example.com", code);
       const free = await signUp("free@example.com", code);
       expect([taken.status, free.status]).toEqual([403, 403]);
-      const bodies = (await Promise.all([taken.json(), free.json()])) as { code: string }[];
-      expect(bodies.map((b) => b.code)).toEqual(["INVITE_REQUIRED", "INVITE_REQUIRED"]);
+      const bodies = (await Promise.all([taken.json(), free.json()])) as {
+        code: string;
+      }[];
+      expect(bodies.map((b) => b.code)).toEqual([
+        "INVITE_REQUIRED",
+        "INVITE_REQUIRED",
+      ]);
     }
   });
 
@@ -502,13 +587,19 @@ describe("a fresh instance", () => {
         values ('v1', '2fa-pending', 'r1', now() + interval '5 minutes'),
                ('v2', 'unrelated', 'r1', now() + interval '5 minutes');`);
     expect((await resetPassword("reset-me@example.com")).code).toBe(0);
-    expect(await psql("select count(*) from two_factor where user_id = 'r1'")).toBe("0");
-    expect(await psql("select identifier from verification where value = 'r1'")).toBe("unrelated");
+    expect(
+      await psql("select count(*) from two_factor where user_id = 'r1'"),
+    ).toBe("0");
+    expect(
+      await psql("select identifier from verification where value = 'r1'"),
+    ).toBe("unrelated");
 
     await psql(`insert into two_factor (id, secret, backup_codes, user_id, verified)
       values ('tf2', 's', 'b', 'r1', true);`);
     expect((await resetPassword("reset-me@example.com")).code).toBe(0);
-    expect(await psql("select count(*) from two_factor where user_id = 'r1'")).toBe("1");
+    expect(
+      await psql("select count(*) from two_factor where user_id = 'r1'"),
+    ).toBe("1");
   });
 
   test("the fetch budget holds on real Postgres, under concurrency too", async () => {
@@ -516,13 +607,23 @@ describe("a fresh instance", () => {
       insert into "user" (id, name, email, email_verified, created_at, updated_at)
         values ('f1', 'f', 'budget@example.com', false, now(), now());`);
     const spend = () => psql("select spend_fetch('f1', 3)");
-    const results = await Promise.all([spend(), spend(), spend(), spend(), spend()]);
+    const results = await Promise.all([
+      spend(),
+      spend(),
+      spend(),
+      spend(),
+      spend(),
+    ]);
     expect(results.filter((r) => r === "t").length).toBe(3);
     expect(await spend()).toBe("f");
 
-    await psql("update fetch_budget set window_start = now() - interval '61 minutes' where user_id = 'f1'");
+    await psql(
+      "update fetch_budget set window_start = now() - interval '61 minutes' where user_id = 'f1'",
+    );
     expect(await spend()).toBe("t");
-    expect(await psql("select used from fetch_budget where user_id = 'f1'")).toBe("1");
+    expect(
+      await psql("select used from fetch_budget where user_id = 'f1'"),
+    ).toBe("1");
 
     await psql(`delete from "user" where id = 'f1'`);
     expect(await psql("select count(*) from fetch_budget")).toBe("0");
@@ -536,65 +637,81 @@ describe("a fresh instance", () => {
 
   test("with no Google settings there is no Google login", async () => {
     for (const path of ["/login", "/signup"]) {
-      expect(await (await get(path)).text()).not.toContain("Continue with Google");
+      expect(await (await get(path)).text()).not.toContain(
+        "Continue with Google",
+      );
     }
     const res = await post("/api/auth/sign-in/social", { provider: "google" });
     expect(res.status).toBeGreaterThanOrEqual(400);
   });
 
-  test("setting only one Google value stops the boot with a clear message", async () => {
-    const boot = await runWith("GOOGLE_CLIENT_ID=abc");
-    expect(boot.code).not.toBe(0);
-    expect(boot.stderr + boot.stdout).toContain(
-      "Set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither.",
-    );
-  }, MINUTES);
+  test(
+    "setting only one Google value stops the boot with a clear message",
+    async () => {
+      const boot = await runWith("GOOGLE_CLIENT_ID=abc");
+      expect(boot.code).not.toBe(0);
+      expect(boot.stderr + boot.stdout).toContain(
+        "Set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither.",
+      );
+    },
+    MINUTES,
+  );
 
-  test("production refuses to boot with no database address", async () => {
-    const boot = await runWith("DATABASE_URL=");
-    expect(boot.code).not.toBe(0);
-    expect(boot.stderr + boot.stdout).toContain("DATABASE_URL");
-  }, MINUTES);
+  test(
+    "production refuses to boot with no database address",
+    async () => {
+      const boot = await runWith("DATABASE_URL=");
+      expect(boot.code).not.toBe(0);
+      expect(boot.stderr + boot.stdout).toContain("DATABASE_URL");
+    },
+    MINUTES,
+  );
 
-  test("setting both Google values shows the button", async () => {
-    await compose(
-      "run",
-      "-d",
-      "--rm",
-      "--no-deps",
-      "--name",
-      "stash-instance-test-google",
-      "-p",
-      "127.0.0.1:3998:3000",
-      "-e",
-      "GOOGLE_CLIENT_ID=abc",
-      "-e",
-      "GOOGLE_CLIENT_SECRET=def",
-      "app",
-    );
-    try {
-      let html = "";
-      const deadline = Date.now() + MINUTES;
-      while (Date.now() < deadline && !html) {
-        html = await fetch("http://localhost:3998/login")
-          .then((r) => r.text())
-          .catch(() => "");
-        if (!html) await Bun.sleep(500);
+  test(
+    "setting both Google values shows the button",
+    async () => {
+      await compose(
+        "run",
+        "-d",
+        "--rm",
+        "--no-deps",
+        "--name",
+        "stash-instance-test-google",
+        "-p",
+        "127.0.0.1:3998:3000",
+        "-e",
+        "GOOGLE_CLIENT_ID=abc",
+        "-e",
+        "GOOGLE_CLIENT_SECRET=def",
+        "app",
+      );
+      try {
+        let html = "";
+        const deadline = Date.now() + MINUTES;
+        while (Date.now() < deadline && !html) {
+          html = await fetch("http://localhost:3998/login")
+            .then((r) => r.text())
+            .catch(() => "");
+          if (!html) await Bun.sleep(500);
+        }
+        expect(html).toContain("Continue with Google");
+      } finally {
+        await Bun.spawn(["docker", "rm", "-f", "stash-instance-test-google"], {
+          stdout: "ignore",
+          stderr: "ignore",
+        }).exited;
       }
-      expect(html).toContain("Continue with Google");
-    } finally {
-      await Bun.spawn(["docker", "rm", "-f", "stash-instance-test-google"], {
-        stdout: "ignore",
-        stderr: "ignore",
-      }).exited;
-    }
-  }, 2 * MINUTES);
+    },
+    2 * MINUTES,
+  );
 });
 
 // The layout of releases before the stash schema: tables in `public` and Drizzle's
 // log in its default place, holding every migration before `beforeTag`.
 async function oldLayout(beforeTag: string) {
-  const { entries } = JSON.parse(readFileSync("drizzle-legacy/meta/_journal.json", "utf8")) as {
+  const { entries } = JSON.parse(
+    readFileSync("drizzle-legacy/meta/_journal.json", "utf8"),
+  ) as {
     entries: { tag: string; when: number }[];
   };
   const applied = entries.filter((e) => e.tag < beforeTag);
@@ -630,9 +747,13 @@ describe("upgrading an instance that already has accounts", () => {
 
   test("moves everything into the stash schema and drops the old log", async () => {
     await expectOnlyStashLayout();
-    expect(await psql("select string_agg(id, ',' order by id) from \"user\"")).toBe("first,later");
+    expect(
+      await psql("select string_agg(id, ',' order by id) from \"user\""),
+    ).toBe("first,later");
     expect(await psql("select spend_fetch('first', 3)")).toBe("t");
-    expect(await psql("select count(*) from pg_proc where proname = 'spend_fetch'")).toBe("1");
+    expect(
+      await psql("select count(*) from pg_proc where proname = 'spend_fetch'"),
+    ).toBe("1");
   });
 
   test("doesn't offer the Owner role to the next signup", async () => {
@@ -645,8 +766,12 @@ describe("upgrading an instance that already has accounts", () => {
       const { stdout } = await resetPassword(email);
       return sessionFrom(await signIn(email, newPassword(stdout)));
     };
-    expect((await get("/invites", await asUser("first@example.com"))).status).toBe(200);
-    expect((await get("/invites", await asUser("later@example.com"))).status).toBe(404);
+    expect(
+      (await get("/invites", await asUser("first@example.com"))).status,
+    ).toBe(200);
+    expect(
+      (await get("/invites", await asUser("later@example.com"))).status,
+    ).toBe(404);
   });
 });
 
@@ -664,59 +789,83 @@ async function expectBootToFail() {
 }
 
 describe("restoring an old backup over an instance that already booted", () => {
-  test("stops the boot and leaves both copies alone", async () => {
-    await freshDatabase();
-    await compose("up", "-d", "app");
-    await waitForApp();
-    await compose("stop", "app");
-    await oldLayout("0008");
-    await psql(
-      `insert into "user" (id, name, email, email_verified, created_at, updated_at)
+  test(
+    "stops the boot and leaves both copies alone",
+    async () => {
+      await freshDatabase();
+      await compose("up", "-d", "app");
+      await waitForApp();
+      await compose("stop", "app");
+      await oldLayout("0008");
+      await psql(
+        `insert into "user" (id, name, email, email_verified, created_at, updated_at)
        values ('old', 'old', 'old@example.com', false, now(), now());`,
-      "public",
-    );
+        "public",
+      );
 
-    await expectBootToFail();
-    expect(await logs()).toContain("both");
-    expect(await psql(`select id from "user"`, "public")).toBe("old");
-    expect(await psql(`select count(*) from "user"`)).toBe("0");
-  }, 4 * MINUTES);
+      await expectBootToFail();
+      expect(await logs()).toContain("both");
+      expect(await psql(`select id from "user"`, "public")).toBe("old");
+      expect(await psql(`select count(*) from "user"`)).toBe("0");
+    },
+    4 * MINUTES,
+  );
 });
 
 describe("an old instance whose migration log another app also writes to", () => {
-  test("stops the boot and keeps the other app's history", async () => {
-    await freshDatabase();
-    await oldLayout("0008");
-    await psql(`insert into drizzle.__drizzle_migrations (hash, created_at) values ('theirs', 1800000000000);`);
+  test(
+    "stops the boot and keeps the other app's history",
+    async () => {
+      await freshDatabase();
+      await oldLayout("0008");
+      await psql(
+        `insert into drizzle.__drizzle_migrations (hash, created_at) values ('theirs', 1800000000000);`,
+      );
 
-    const { code, stdout, stderr } = await bootstrapAs("stash");
-    expect(code).not.toBe(0);
-    expect(stdout + stderr).toContain("other app");
-    expect(await psql("select count(*) from drizzle.__drizzle_migrations")).toBe("9");
-    expect(await psql("select count(*) from pg_tables where schemaname = 'public'")).toBe("11");
-  }, 3 * MINUTES);
+      const { code, stdout, stderr } = await bootstrapAs("stash");
+      expect(code).not.toBe(0);
+      expect(stdout + stderr).toContain("other app");
+      expect(
+        await psql("select count(*) from drizzle.__drizzle_migrations"),
+      ).toBe("9");
+      expect(
+        await psql(
+          "select count(*) from pg_tables where schemaname = 'public'",
+        ),
+      ).toBe("11");
+    },
+    3 * MINUTES,
+  );
 });
 
 describe("a database role that may not create schemas", () => {
-  test("stops the boot and says which grant it needs", async () => {
-    await freshDatabase();
-    await psql(`create role limited login password 'limited';`);
+  test(
+    "stops the boot and says which grant it needs",
+    async () => {
+      await freshDatabase();
+      await psql(`create role limited login password 'limited';`);
 
-    const { code, stdout, stderr } = await runWith(
-      "DATABASE_URL=postgresql://limited:limited@db:5432/stash",
-    );
-    expect(code).not.toBe(0);
-    expect(stdout + stderr).toContain(`GRANT CREATE ON DATABASE "stash" TO "limited";`);
-  }, 3 * MINUTES);
+      const { code, stdout, stderr } = await runWith(
+        "DATABASE_URL=postgresql://limited:limited@db:5432/stash",
+      );
+      expect(code).not.toBe(0);
+      expect(stdout + stderr).toContain(
+        `GRANT CREATE ON DATABASE "stash" TO "limited";`,
+      );
+    },
+    3 * MINUTES,
+  );
 });
 
 describe("pointing at a database another Drizzle app already uses", () => {
-  test("boots beside it and leaves its tables and migration log alone", async () => {
-    await freshDatabase();
-    // The other app has its own role, and stash's role may not even look into its
-    // schemas. Named `app`, stash's role also has no `stash` schema on its search_path.
-    await psql(
-      `
+  test(
+    "boots beside it and leaves its tables and migration log alone",
+    async () => {
+      await freshDatabase();
+      // The other app has its own role, and stash's role may not even look into its
+      // schemas. Named `app`, stash's role also has no `stash` schema on its search_path.
+      await psql(
+        `
       create role other;
       create role app login password 'app';
       grant create on database stash to app;
@@ -726,14 +875,20 @@ describe("pointing at a database another Drizzle app already uses", () => {
       create table drizzle.__drizzle_migrations (id serial primary key, hash text not null, created_at bigint);
       insert into drizzle.__drizzle_migrations (hash, created_at) values ('theirs', 1700000000000);
       alter table drizzle.__drizzle_migrations owner to other;`,
-      "public",
-    );
+        "public",
+      );
 
-    const boot = await bootstrapAs("app");
-    expect(boot.stderr).not.toContain("Error");
-    expect(boot.code).toBe(0);
-    expect(await psql(`select id from "user"`, "public")).toBe("7");
-    expect(await psql("select hash from drizzle.__drizzle_migrations")).toBe("theirs");
-    expect(await psql("select count(*) from pg_tables where schemaname = 'stash'")).toBe("14");
-  }, 3 * MINUTES);
+      const boot = await bootstrapAs("app");
+      expect(boot.stderr).not.toContain("Error");
+      expect(boot.code).toBe(0);
+      expect(await psql(`select id from "user"`, "public")).toBe("7");
+      expect(await psql("select hash from drizzle.__drizzle_migrations")).toBe(
+        "theirs",
+      );
+      expect(
+        await psql("select count(*) from pg_tables where schemaname = 'stash'"),
+      ).toBe("14");
+    },
+    3 * MINUTES,
+  );
 });
