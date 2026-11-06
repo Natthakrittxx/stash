@@ -63,5 +63,7 @@ export const env = createEnv({
 
 // Half a Google setup would boot fine and only fail when someone clicks the button.
 if (!env.GOOGLE_CLIENT_ID !== !env.GOOGLE_CLIENT_SECRET) {
-  throw new Error("Set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither.");
+  throw new Error(
+    "Set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither.",
+  );
 }

@@ -216,7 +216,10 @@ export async function createItem(formData: FormData): Promise<Result> {
   // preview: the map needs its pin the moment it lands.
   const place =
     row.kind === "place" && row.url
-      ? { ...(await placeRow(parsed.data, row.url, userId)), ...pinFrom(formData) }
+      ? {
+          ...(await placeRow(parsed.data, row.url, userId)),
+          ...pinFrom(formData),
+        }
       : {};
   const [inserted] = await db
     .insert(items)
@@ -519,7 +522,9 @@ export async function addCollaborator(
   const [created] = await db
     .select({ id: collections.id })
     .from(collections)
-    .where(and(eq(collections.id, collectionId), eq(collections.userId, caller)));
+    .where(
+      and(eq(collections.id, collectionId), eq(collections.userId, caller)),
+    );
   const [account] = await db
     .select({ id: user.id })
     .from(user)
@@ -579,7 +584,9 @@ export async function removeCollaborator(
   const [created] = await db
     .select({ id: collections.id })
     .from(collections)
-    .where(and(eq(collections.id, collectionId), eq(collections.userId, caller)));
+    .where(
+      and(eq(collections.id, collectionId), eq(collections.userId, caller)),
+    );
   if (!created) return { error: "No such collection." };
 
   await dropCollaborator(collectionId, userId);

@@ -1159,7 +1159,7 @@ export function Stash({
             aria-label="GitHub repository (opens in a new tab)"
             // Pulled in so the glyphs, not their 36px boxes, set the rhythm.
             // Hidden below sm: a 375px phone can't fit it beside the nav.
-            className={`text-muted hover:text-ink -mr-2.5 -ml-1 hidden h-9 w-9 shrink-0 sm:grid place-items-center rounded transition-colors duration-150 ${focusRing}`}
+            className={`text-muted hover:text-ink -mr-2.5 -ml-1 hidden h-9 w-9 shrink-0 place-items-center rounded transition-colors duration-150 sm:grid ${focusRing}`}
           >
             <GitHubMark className="size-[18px]" />
           </a>

@@ -41,7 +41,10 @@ export const items = stashSchema.table(
     lng: doublePrecision("lng"),
     address: text("address"),
     description: text("description").notNull().default(""),
-    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    tags: text("tags")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -164,7 +167,11 @@ export const user = stashSchema.table(
     isOwner: boolean("is_owner").notNull().default(false),
     twoFactorEnabled: boolean("two_factor_enabled").default(false),
   },
-  (t) => [uniqueIndex("user_one_owner").on(t.isOwner).where(sql`is_owner`)],
+  (t) => [
+    uniqueIndex("user_one_owner")
+      .on(t.isOwner)
+      .where(sql`is_owner`),
+  ],
 );
 
 // Unused codes only: redeeming or revoking one deletes its row, so a row
@@ -289,13 +296,19 @@ export const collectionRelations = relations(collections, ({ one, many }) => ({
   items: many(collectionItems),
 }));
 
-export const collectionItemRelations = relations(collectionItems, ({ one }) => ({
-  collection: one(collections, {
-    fields: [collectionItems.collectionId],
-    references: [collections.id],
+export const collectionItemRelations = relations(
+  collectionItems,
+  ({ one }) => ({
+    collection: one(collections, {
+      fields: [collectionItems.collectionId],
+      references: [collections.id],
+    }),
+    item: one(items, {
+      fields: [collectionItems.itemId],
+      references: [items.id],
+    }),
   }),
-  item: one(items, { fields: [collectionItems.itemId], references: [items.id] }),
-}));
+);
 
 export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, { fields: [account.userId], references: [user.id] }),
