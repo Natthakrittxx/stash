@@ -248,6 +248,8 @@ export const twoFactor = stashSchema.table(
 // items because a delete removes the item, not the fetch it caused. Spent through
 // the spend_fetch function in migration 0001, which db:push doesn't create, so
 // build a database with bootstrap, which also moves pre-0.3.0 instances.
+// shortcut: the app stopped spending this budget, so the table and spend_fetch sit
+// unused. Drop both in one migration once no instance runs a release that calls it.
 export const fetchBudget = stashSchema.table("fetch_budget", {
   userId: text("user_id")
     .primaryKey()

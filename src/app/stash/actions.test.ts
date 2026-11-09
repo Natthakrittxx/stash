@@ -1,8 +1,7 @@
 import { beforeEach, expect, mock, test } from "bun:test";
 
 // Everything but the action's own decisions is stubbed: no Next, no Postgres, no
-// network. spend_fetch itself is tested against real Postgres in instance.e2e.ts.
-let budgetLeft = 0;
+// network.
 let fetched: string[] = [];
 const pending: (() => Promise<void>)[] = [];
 
@@ -34,9 +33,6 @@ void mock.module("~/server/better-auth/server", () => ({
   getSession: async () => ({ user: { id: "u1" } }),
 }));
 void mock.module("~/server/db", () => ({ db: chain() }));
-void mock.module("~/server/fetch-budget", () => ({
-  spendFetch: async () => budgetLeft-- > 0,
-}));
 void mock.module("~/server/og", () => ({
   fetchPreview: async (url: string) => {
     fetched.push(url);
@@ -44,8 +40,8 @@ void mock.module("~/server/og", () => ({
   },
 }));
 void mock.module("~/server/place", () => ({
-  resolvePlace: async (url: string, options?: { offline?: boolean }) => {
-    if (!options?.offline) fetched.push(url);
+  resolvePlace: async (url: string) => {
+    fetched.push(url);
     return { lat: null, lng: null, name: null, address: null, image: null };
   },
 }));
@@ -77,42 +73,19 @@ beforeEach(() => {
   pending.length = 0;
 });
 
-test("an edit within the budget fetches the page", async () => {
-  budgetLeft = 1;
+test("an edit fetches the page", async () => {
   expect((await updateItem(ID, form("tool", "https://a.dev/"))).id).toBe(ID);
   await settle();
   expect(fetched).toEqual(["https://a.dev/"]);
 });
 
-test("an edit past the budget still saves, and fetches nothing", async () => {
-  budgetLeft = 0;
-  expect((await updateItem(ID, form("tool", "https://a.dev/"))).id).toBe(ID);
-  await settle();
-  expect(fetched).toEqual([]);
-});
-
-test("a save past the budget still saves, and fetches nothing", async () => {
-  budgetLeft = 0;
+test("a save fetches the page", async () => {
   expect((await createItem(form("tool", "https://a.dev/"))).id).toBe(ID);
   await settle();
-  expect(fetched).toEqual([]);
+  expect(fetched).toEqual(["https://a.dev/"]);
 });
 
-test("a place past the budget still saves, reading only its link", async () => {
-  budgetLeft = 0;
-  const link = "https://www.google.com/maps/place/x/@35.6,139.7,17z";
-  expect((await createItem(form("place", link))).id).toBe(ID);
-  expect(fetched).toEqual([]);
-});
-
-test("a place link that won't be fetched spends nothing", async () => {
-  budgetLeft = 1;
-  await createItem(form("place", "https://a.dev/not-a-map"));
-  expect(budgetLeft).toBe(1);
-});
-
-test("a place within the budget follows its link", async () => {
-  budgetLeft = 1;
+test("a place follows its link", async () => {
   const link = "https://www.google.com/maps/place/x/@35.6,139.7,17z";
   await createItem(form("place", link));
   expect(fetched).toEqual([link]);

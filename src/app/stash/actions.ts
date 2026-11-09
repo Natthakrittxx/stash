@@ -1,12 +1,11 @@
 "use server";
 
-import { and, arrayContains, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, arrayContains, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 
 import { tagOf, tagProblem, tagsFrom, text, titleOr } from "~/form";
-import { isMapsLink } from "~/maps";
 import { getSession } from "~/server/better-auth/server";
 import { db } from "~/server/db";
 import {
@@ -17,14 +16,11 @@ import {
   tags,
   user,
 } from "~/server/db/schema";
-import { spendFetch } from "~/server/fetch-budget";
 import { fetchPreview } from "~/server/og";
 import { resolvePlace } from "~/server/place";
 import { normalizeUrl } from "~/server/url";
 
 import { inCollection } from "./data";
-
-const ITEMS_PER_HOUR = 60;
 
 // The id arrives from the client and goes straight at a uuid column, where a
 // non-uuid string raises 22P02 and surfaces as a 500 rather than an error.
@@ -123,16 +119,8 @@ function toRow(data: z.infer<typeof itemSchema>) {
 
 // A place's pin, address and image come from its link; its title too when left
 // blank, since the link's host ("maps.app.goo.gl") names nothing.
-async function placeRow(
-  data: z.infer<typeof itemSchema>,
-  url: string,
-  userId: string,
-) {
-  // Only a maps link gets fetched, so only one spends. Past the budget, the link
-  // itself can still carry the pin and name.
-  const place = await resolvePlace(url, {
-    offline: isMapsLink(url) && !(await spendFetch(userId)),
-  });
+async function placeRow(data: z.infer<typeof itemSchema>, url: string) {
+  const place = await resolvePlace(url);
   return {
     ...(data.title ? {} : place.name ? { title: place.name } : {}),
     lat: place.lat,
@@ -157,7 +145,6 @@ function resolvePreview(
   // Only backfill a description the user left blank — never clobber their words.
   const wantsDescription = row.description.length === 0;
   after(async () => {
-    if (!(await spendFetch(userId))) return;
     const { image, description } = await fetchPreview(url);
     const patch: { image?: string; description?: string } = {};
     if (image) patch.image = image;
@@ -192,32 +179,13 @@ export async function createItem(formData: FormData): Promise<Result> {
   const parsed = parse(formData);
   if (!parsed.success) return invalid(parsed.error);
 
-  // ponytail: a count query is the whole rate limiter. No Redis, no in-memory
-  // counter that a cold start or a second region would forget. Swap for a
-  // token bucket only if this query shows up in slow logs.
-  const [recent] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(items)
-    .where(
-      and(
-        eq(items.userId, userId),
-        gt(items.createdAt, sql`now() - interval '1 hour'`),
-      ),
-    );
-
-  if ((recent?.count ?? 0) >= ITEMS_PER_HOUR) {
-    return {
-      error: `That's ${ITEMS_PER_HOUR} saves in an hour. Try again later.`,
-    };
-  }
-
   const row = toRow(parsed.data);
   // A place resolves before the insert, not after the response like a tool's
   // preview: the map needs its pin the moment it lands.
   const place =
     row.kind === "place" && row.url
       ? {
-          ...(await placeRow(parsed.data, row.url, userId)),
+          ...(await placeRow(parsed.data, row.url)),
           ...pinFrom(formData),
         }
       : {};
@@ -282,7 +250,7 @@ export async function updateItem(
     set =
       current.kind === "place" && current.url === row.url
         ? { ...row, title: parsed.data.title || current.title }
-        : { ...row, ...(await placeRow(parsed.data, row.url, userId)) };
+        : { ...row, ...(await placeRow(parsed.data, row.url)) };
   }
   const updated = await db
     .update(items)
