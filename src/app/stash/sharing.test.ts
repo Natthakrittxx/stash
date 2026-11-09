@@ -21,9 +21,6 @@ void mock.module("~/server/better-auth/server", () => ({
   getSession: async () => ({ user: { id: caller } }),
 }));
 void mock.module("~/server/db", () => ({ db }));
-void mock.module("~/server/fetch-budget", () => ({
-  spendFetch: async () => false,
-}));
 void mock.module("~/server/og", () => ({
   fetchPreview: async () => ({ image: null, description: null }),
 }));
