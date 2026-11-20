@@ -43,7 +43,7 @@ Emotional goal: trust. The user should feel that anything put here will still be
 1. **Capture costs nothing.** Saving is a reflex, not a task. Any friction at the moment of capture — a modal, a required field, a category picker — kills the habit the product depends on.
 2. **The content is the interface.** Chrome earns its pixels or disappears. What was saved should be legible before anything the app wrapped around it.
 3. **Re-finding is the product.** Search, filtering, and browsing get the design effort that a lesser tool spends on the save button. A stash you can't search is a landfill.
-4. **Private, not social.** A stash belongs to one person. No sharing, no feeds, no engagement mechanics, no audience.
+4. **Private, not social.** A stash belongs to one person. The one exception is a shared collection: the people its creator names see what is filed in it, and nothing else. No feeds, no engagement mechanics, no audience.
 5. **Density is earned.** Dense when it genuinely informs — a long list you're scanning. Never dense to look serious.
 
 ## Accessibility & Inclusion

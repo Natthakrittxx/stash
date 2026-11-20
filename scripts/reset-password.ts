@@ -35,23 +35,23 @@ const sql = postgres(url, {
 try {
   const found = await sql.begin(async (tx) => {
     const [user] = await tx<{ id: string }[]>`
-      select id from "user" where email = ${email}`;
+      select id from stash."user" where email = ${email}`;
     if (!user) return false;
 
     const updated = await tx`
-      update account set password = ${hash}, updated_at = now()
+      update stash.account set password = ${hash}, updated_at = now()
       where user_id = ${user.id} and provider_id = 'credential'`;
     // A Google-only account has no password record yet.
     if (updated.count === 0) {
       await tx`
-        insert into account (id, account_id, provider_id, user_id, password, created_at, updated_at)
+        insert into stash.account (id, account_id, provider_id, user_id, password, created_at, updated_at)
         values (${randomUUID()}, ${user.id}, 'credential', ${user.id}, ${hash}, now(), now())`;
     }
-    await tx`delete from session where user_id = ${user.id}`;
+    await tx`delete from stash.session where user_id = ${user.id}`;
     // Whoever is being locked out may have started these with the old password: a
     // second factor they never finished setting up, and sign-ins awaiting a code.
-    await tx`delete from two_factor where user_id = ${user.id} and verified = false`;
-    await tx`delete from verification where value = ${user.id} and identifier like '2fa-%'`;
+    await tx`delete from stash.two_factor where user_id = ${user.id} and verified = false`;
+    await tx`delete from stash.verification where value = ${user.id} and identifier like '2fa-%'`;
     return true;
   });
 

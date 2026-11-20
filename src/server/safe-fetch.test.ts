@@ -2,8 +2,10 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 
 import { isPublicAddress, safeFetch } from "./safe-fetch";
 
-const resolves = (...addresses: string[]) => async () =>
-  addresses.map((address) => ({ address }));
+const resolves =
+  (...addresses: string[]) =>
+  async () =>
+    addresses.map((address) => ({ address }));
 
 // Bun types `expect().rejects` as not awaitable, which the lint rules reject.
 const refused = (attempt: Promise<Response>) =>
@@ -71,20 +73,34 @@ test("treats something that is not an address as not public", () => {
 
 test("fetches a host that resolves to a public address", async () => {
   const fetched = stubFetch(() => new Response("ok"));
-  const res = await safeFetch("https://example.com/", {}, resolves("93.184.216.34"));
+  const res = await safeFetch(
+    "https://example.com/",
+    {},
+    resolves("93.184.216.34"),
+  );
   expect(await res.text()).toBe("ok");
   expect(fetched).toHaveBeenCalledTimes(1);
 });
 
 test("refuses a name that resolves to a private address, like a compose service", async () => {
   const fetched = stubFetch(() => new Response("secret"));
-  expect(await refused(safeFetch("http://db:5432/", {}, resolves("172.18.0.2")))).toBe(true);
+  expect(
+    await refused(safeFetch("http://db:5432/", {}, resolves("172.18.0.2"))),
+  ).toBe(true);
   expect(fetched).not.toHaveBeenCalled();
 });
 
 test("refuses when any one resolved address is private", async () => {
   const fetched = stubFetch(() => new Response("secret"));
-  expect(await refused(safeFetch("https://mixed.example/", {}, resolves("93.184.216.34", "10.0.0.1")))).toBe(true);
+  expect(
+    await refused(
+      safeFetch(
+        "https://mixed.example/",
+        {},
+        resolves("93.184.216.34", "10.0.0.1"),
+      ),
+    ),
+  ).toBe(true);
   expect(fetched).not.toHaveBeenCalled();
 });
 
@@ -98,10 +114,17 @@ test("refuses IP literals without resolving them", async () => {
 test("follows a redirect between public hosts", async () => {
   stubFetch((url) =>
     url === "https://short.example/a"
-      ? new Response(null, { status: 302, headers: { location: "https://long.example/b" } })
+      ? new Response(null, {
+          status: 302,
+          headers: { location: "https://long.example/b" },
+        })
       : new Response(url),
   );
-  const res = await safeFetch("https://short.example/a", {}, resolves("93.184.216.34"));
+  const res = await safeFetch(
+    "https://short.example/a",
+    {},
+    resolves("93.184.216.34"),
+  );
   expect(await res.text()).toBe("https://long.example/b");
 });
 
@@ -111,26 +134,44 @@ test("resolves a relative redirect against the current URL", async () => {
       ? new Response(null, { status: 301, headers: { location: "../c" } })
       : new Response(url),
   );
-  const res = await safeFetch("https://example.com/a/b", {}, resolves("93.184.216.34"));
+  const res = await safeFetch(
+    "https://example.com/a/b",
+    {},
+    resolves("93.184.216.34"),
+  );
   expect(await res.text()).toBe("https://example.com/c");
 });
 
 test("refuses a redirect that bounces into private space", async () => {
   const fetched = stubFetch(
-    () => new Response(null, { status: 302, headers: { location: "http://internal.example/" } }),
+    () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "http://internal.example/" },
+      }),
   );
   const lookup = async (host: string) => [
     { address: host === "internal.example" ? "10.0.0.5" : "93.184.216.34" },
   ];
-  expect(await refused(safeFetch("https://public.example/", {}, lookup))).toBe(true);
+  expect(await refused(safeFetch("https://public.example/", {}, lookup))).toBe(
+    true,
+  );
   expect(fetched).toHaveBeenCalledTimes(1);
 });
 
 test("refuses a redirect to a non-http scheme", async () => {
   stubFetch(
-    () => new Response(null, { status: 302, headers: { location: "file:///etc/passwd" } }),
+    () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "file:///etc/passwd" },
+      }),
   );
-  expect(await refused(safeFetch("https://public.example/", {}, resolves("93.184.216.34")))).toBe(true);
+  expect(
+    await refused(
+      safeFetch("https://public.example/", {}, resolves("93.184.216.34")),
+    ),
+  ).toBe(true);
 });
 
 test("gives up after too many redirects", async () => {
@@ -142,12 +183,20 @@ test("gives up after too many redirects", async () => {
         headers: { location: `https://public.example/${++hop}` },
       }),
   );
-  expect(await refused(safeFetch("https://public.example/", {}, resolves("93.184.216.34")))).toBe(true);
+  expect(
+    await refused(
+      safeFetch("https://public.example/", {}, resolves("93.184.216.34")),
+    ),
+  ).toBe(true);
   expect(fetched.mock.calls.length).toBeLessThanOrEqual(6);
 });
 
 test("returns a 3xx with no location as it is", async () => {
   stubFetch(() => new Response(null, { status: 304 }));
-  const res = await safeFetch("https://public.example/", {}, resolves("93.184.216.34"));
+  const res = await safeFetch(
+    "https://public.example/",
+    {},
+    resolves("93.184.216.34"),
+  );
   expect(res.status).toBe(304);
 });

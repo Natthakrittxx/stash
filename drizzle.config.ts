@@ -8,4 +8,7 @@ export default {
   dbCredentials: {
     url: env.DATABASE_URL,
   },
+  // Stash owns only the `stash` schema, its migration log included (ADR 0002).
+  schemaFilter: ["stash"],
+  migrations: { schema: "stash" },
 } satisfies Config;

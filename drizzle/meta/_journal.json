@@ -5,64 +5,36 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1783672761530,
-      "tag": "0000_pretty_vin_gonzales",
+      "when": 1793688782610,
+      "tag": "0000_stash_baseline",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1783676607779,
-      "tag": "0001_remarkable_scalphunter",
+      "when": 1793688782840,
+      "tag": "0001_spend_fetch",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1783704955902,
-      "tag": "0002_wakeful_shadowcat",
+      "when": 1793788166100,
+      "tag": "0002_collaborators",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1793117270645,
-      "tag": "0003_eminent_sway",
+      "when": 1793943498229,
+      "tag": "0003_tags",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1793367160387,
-      "tag": "0004_instance_owner_and_invites",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1793457784767,
-      "tag": "0005_second_factor_and_passkeys",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1793520035940,
-      "tag": "0006_fetch_budget",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1793547125934,
-      "tag": "0007_first_signup_is_owner",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1795161492115,
-      "tag": "0008_events",
+      "when": 1795163236651,
+      "tag": "0004_events",
       "breakpoints": true
     }
   ]

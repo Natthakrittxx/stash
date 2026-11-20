@@ -21,7 +21,7 @@ Design principles:
 1. **Capture costs nothing.** Saving is a reflex, not a task.
 2. **The content is the interface.** Chrome earns its pixels or disappears.
 3. **Re-finding is the product.** Search and browse get the design effort a lesser tool spends on the save button.
-4. **Shared, not social.** No feeds, no engagement mechanics, no audience.
+4. **Private, not social.** A stash belongs to one person; a shared collection is the one exception. No feeds, no engagement mechanics, no audience.
 5. **Density is earned.** Dense only when it genuinely informs.
 
 Anti-references: the uniform card grid (Pocket/Pinterest), the generic SaaS dashboard. Accessibility bar: WCAG 2.2 AA.

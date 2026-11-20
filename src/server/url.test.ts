@@ -4,7 +4,9 @@ import { normalizeUrl } from "./url";
 
 test("prefixes https:// onto a bare host", () => {
   expect(normalizeUrl("ripgrep.dev")).toBe("https://ripgrep.dev/");
-  expect(normalizeUrl("  example.com/a?b=1  ")).toBe("https://example.com/a?b=1");
+  expect(normalizeUrl("  example.com/a?b=1  ")).toBe(
+    "https://example.com/a?b=1",
+  );
 });
 
 test("keeps an explicit scheme", () => {

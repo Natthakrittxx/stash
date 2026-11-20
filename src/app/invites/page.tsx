@@ -30,8 +30,8 @@ export default async function InvitesPage() {
       <SubPageHeader />
       <h1 className="text-headline text-ink mt-2 font-serif">Invite codes</h1>
       <p className="text-body text-muted mt-1">
-        Each code lets one person start a stash here. It stops working once
-        used or revoked.
+        Each code lets one person start a stash here. It stops working once used
+        or revoked.
       </p>
 
       <form action={createInvite} className="mt-8">

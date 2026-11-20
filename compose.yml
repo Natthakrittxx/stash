@@ -11,9 +11,10 @@ services:
       # Anything public needs HTTPS: see "HTTPS" in the README.
       BETTER_AUTH_URL: http://localhost:3000
 
-      # To use your own PostgreSQL 13+ instead of the bundled one, in a database
-      # used only by stash:
+      # To use your own PostgreSQL 13+ instead of the bundled one, in any database
+      # (stash keeps to its own `stash` schema):
       #   1. Change DATABASE_URL below, adding ?sslmode=require if your host needs it.
+      #      A PostgreSQL on this same machine is host.docker.internal, not localhost.
       #   2. Delete the `depends_on` block under `app`.
       #   3. Delete the `db` service and the `stash-db` volume.
       DATABASE_URL: postgresql://stash:stash@db:5432/stash
@@ -24,6 +25,9 @@ services:
     volumes:
       # Holds the auth secret, which is generated on first boot.
       - stash-secret:/data
+    # Makes host.docker.internal reach this machine on Linux too. Harmless when unused.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
