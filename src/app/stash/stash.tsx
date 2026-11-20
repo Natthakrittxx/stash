@@ -16,6 +16,7 @@ import {
   useTransition,
 } from "react";
 
+import { formatWhen } from "~/events";
 import {
   looksLikeLink,
   suggestTags,
@@ -59,6 +60,7 @@ import {
   setPlacePin,
   updateItem,
 } from "./actions";
+import { EventCalendar, type EventItem } from "./calendar";
 import type { Point } from "./map";
 import {
   CollectionsButton,
@@ -95,6 +97,8 @@ export type Item = Pick<
   | "lat"
   | "lng"
   | "address"
+  | "startsAt"
+  | "endsAt"
 > & {
   // Null for the caller's own items. Anyone else's arrives only through a
   // shared collection, and is shown only inside one (ADR 0003).
@@ -111,11 +115,38 @@ export type Collection = {
   collaborators: Person[];
 };
 export type Account = Person & { email: string };
-type Tab = "all" | "tool" | "formula" | "place";
+type Tab = "all" | "tool" | "formula" | "place" | "event";
+type Kind = Exclude<Tab, "all">;
+const KINDS: Kind[] = ["tool", "formula", "place", "event"];
+const KIND_LABELS: Record<Kind, string> = {
+  tool: "Tool",
+  formula: "Formula",
+  place: "Place",
+  event: "Event",
+};
+const TAB_LABELS: Record<Kind, string> = {
+  tool: "Tools",
+  formula: "Formulae",
+  place: "Places",
+  event: "Events",
+};
+const asKind = (v: string | undefined): Kind | null =>
+  KINDS.includes(v as Kind) ? (v as Kind) : null;
 // What a fresh composer opens with, field by field: a remembered draft, a
 // no-match prefill, or the item being edited.
 type Draft = Partial<
-  Record<"kind" | "url" | "cmd" | "title" | "description" | "tags", string>
+  Record<
+    | "kind"
+    | "url"
+    | "cmd"
+    | "title"
+    | "description"
+    | "tags"
+    | "startsAt"
+    | "endsAt"
+    | "address",
+    string
+  >
 >;
 type Failure = { message: string; field?: string };
 
@@ -193,9 +224,9 @@ function hostOf(url: string): string {
 }
 
 function draftFrom(formData: FormData, id: string): Item {
-  const raw = text(formData, "kind");
-  const kind = raw === "tool" || raw === "place" ? raw : "formula";
-  const url = kind === "formula" ? null : text(formData, "url");
+  const kind = asKind(text(formData, "kind")) ?? "formula";
+  const event = kind === "event";
+  const url = kind === "formula" ? null : text(formData, "url").trim() || null;
   // A full maps link carries its pin and name, so a new place lands on the map
   // at once; a short link waits for the server to follow it.
   const link = kind === "place" && url ? parseLink(url) : null;
@@ -213,7 +244,9 @@ function draftFrom(formData: FormData, id: string): Item {
     cmd: kind === "formula" ? text(formData, "cmd") : null,
     lat: pin?.lat ?? null,
     lng: pin?.lng ?? null,
-    address: null,
+    address: event ? text(formData, "address").trim() || null : null,
+    startsAt: event ? text(formData, "startsAt") || null : null,
+    endsAt: event ? text(formData, "endsAt") || null : null,
     savedBy: null,
     // The server resolves the real preview and revalidates; until then the row
     // shows its monogram fallback.
@@ -238,6 +271,9 @@ function formDataOf(item: Item, collectionIds: string[] = []): FormData {
   fd.set("tags", item.tags.join(", "));
   if (item.url) fd.set("url", item.url);
   if (item.cmd) fd.set("cmd", item.cmd);
+  if (item.startsAt) fd.set("startsAt", item.startsAt);
+  if (item.endsAt) fd.set("endsAt", item.endsAt);
+  if (item.kind === "event" && item.address) fd.set("address", item.address);
   return fd;
 }
 
@@ -249,6 +285,9 @@ function draftOf(item: Item): Draft {
     title: item.title,
     description: item.description,
     tags: item.tags.join(", "),
+    startsAt: item.startsAt ?? "",
+    endsAt: item.endsAt ?? "",
+    address: item.kind === "event" ? (item.address ?? "") : "",
   };
 }
 
@@ -341,6 +380,8 @@ export function Stash({
   // A receipt that lapses on its own: a save, or a tag made or deleted.
   const [saved, setSaved] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The day the Events calendar opens on; null is this month.
+  const [calFocus, setCalFocus] = useState<string | null>(null);
 
   // Places. A collection is where you are inside Places, like a tab.
   const [folders, patchFolders] = useOptimistic(
@@ -598,6 +639,7 @@ export function Stash({
     tool: searched.filter((i) => i.kind === "tool").length,
     formula: searched.filter((i) => i.kind === "formula").length,
     place: searched.filter((i) => i.kind === "place").length,
+    event: searched.filter((i) => i.kind === "event").length,
   };
 
   const tagCounts = useMemo(() => {
@@ -687,6 +729,14 @@ export function Stash({
     () => visible.filter((i) => i.kind === "place"),
     [visible],
   );
+  const eventsView = tab === "event";
+  const events = useMemo(
+    () =>
+      visible
+        .filter((i): i is EventItem => i.kind === "event" && !!i.startsAt)
+        .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+    [visible],
+  );
   const pinned = places.filter(
     (p): p is Item & { lat: number; lng: number } =>
       p.lat !== null && p.lng !== null,
@@ -749,8 +799,7 @@ export function Stash({
       ? [
           `${visible.length} ${visible.length === 1 ? "match" : "matches"}`,
           q && `for “${q}”`,
-          tab !== "all" &&
-            `in ${tab === "tool" ? "Tools" : tab === "formula" ? "Formulae" : "Places"}`,
+          tab !== "all" && `in ${TAB_LABELS[tab]}`,
           activeTag && `tagged ${activeTag}`,
           collection && `in ${collection.name}`,
         ]
@@ -825,6 +874,13 @@ export function Stash({
         key: `place:${id}`,
         points: [{ lat: p.lat, lng: p.lng }],
       });
+  }
+
+  // "Show in calendar" from the All view: open Events on that event's day.
+  function openEvent(item: EventItem) {
+    setCalFocus(item.startsAt.slice(0, 10));
+    onTab("event");
+    window.scrollTo({ top: 0 });
   }
 
   async function onCreateCollection(name: string) {
@@ -958,7 +1014,7 @@ export function Stash({
     const draft = draftFrom(formData, target?.id ?? crypto.randomUUID());
     // An edit that keeps the link keeps its pin and preview until the server
     // answers.
-    if (target?.url === draft.url)
+    if (draft.kind !== "event" && target?.url === draft.url)
       Object.assign(draft, {
         lat: target.lat,
         lng: target.lng,
@@ -975,6 +1031,8 @@ export function Stash({
     // Show where it went: the desktop pane selects it (a tool), and a receipt
     // names it, since the alphabetical list may have filed it off-screen.
     if (result.id && draft.kind === "place") selectPlace(result.id);
+    else if (draft.kind === "event" && draft.startsAt)
+      setCalFocus(draft.startsAt.slice(0, 10));
     else if (result.id && draft.kind === "tool") setSelectedId(result.id);
     setSaved(`Saved “${draft.title}”`);
     closeComposer(true);
@@ -1228,14 +1286,7 @@ export function Stash({
             <IndexHeading
               key={collection?.id ?? tab}
               collection={collection}
-              fallback={
-                {
-                  all: "Everything",
-                  tool: "Tools",
-                  formula: "Formulae",
-                  place: "Places",
-                }[tab]
-              }
+              fallback={tab === "all" ? "Everything" : TAB_LABELS[tab]}
               accounts={accounts}
               onDelete={() => collection && onDeleteCollection(collection)}
               onLeave={() => collection && onLeaveCollection(collection)}
@@ -1354,7 +1405,9 @@ export function Stash({
                 <span aria-hidden="true">+ </span>
                 {placesView
                   ? "Paste a maps link…"
-                  : "Save a tool, a formula, or a place…"}
+                  : eventsView
+                    ? "Save an event…"
+                    : "Save a tool, a formula, a place, or an event…"}
               </span>
               <kbd className="border-border text-label rounded border px-1.5 py-0.5 pointer-coarse:hidden">
                 a
@@ -1375,7 +1428,28 @@ export function Stash({
               ? { "aria-labelledby": `kind-tab-${tab}` }
               : { "aria-label": "Results" })}
           >
-            {placesView ? (
+            {eventsView ? (
+              events.length === 0 && (q || activeTag) ? (
+                <Empty
+                  hasItems
+                  query={q}
+                  filtered={!!activeTag}
+                  onAdd={() => openComposer()}
+                  onClear={clearAll}
+                  onSaveQuery={saveQuery}
+                />
+              ) : (
+                <EventCalendar
+                  // Fresh per "Show in calendar", so it opens on that day.
+                  key={calFocus ?? "now"}
+                  events={events}
+                  focus={calFocus}
+                  filing={filing}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                />
+              )
+            ) : placesView ? (
               !mapShown ? (
                 // Same place and treatment as every other empty view: centred
                 // under the trigger.
@@ -1537,6 +1611,23 @@ export function Stash({
                   </section>
                 )}
 
+                {events.length > 0 && (
+                  <section>
+                    <SectionHeading count={events.length} quiet={false}>
+                      Events
+                    </SectionHeading>
+                    <ul className="divide-border divide-y">
+                      {events.map((item) => (
+                        <EventLink
+                          key={item.id}
+                          item={item}
+                          onOpen={() => openEvent(item)}
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
                 {places.length > 0 && (
                   <section>
                     <SectionHeading count={places.length} quiet={false}>
@@ -1575,8 +1666,10 @@ export function Stash({
         ) : (
           // Hold the pane's column while no tool is showing (the Formulae tab,
           // a formulae-only search), so the list never jumps wider mid-typing.
+          // The calendar takes the width instead.
           wide &&
-          hasItems && <div aria-hidden="true" className="w-96 shrink-0" />
+          hasItems &&
+          !eventsView && <div aria-hidden="true" className="w-96 shrink-0" />
         )}
       </div>
 
@@ -1587,7 +1680,7 @@ export function Stash({
           <ComposerForm
             key={composer.key}
             collection={collection}
-            placesView={placesView}
+            tab={tab}
             editing={composer.editing}
             defaults={composer.defaults}
             restored={composer.restored}
@@ -1689,6 +1782,7 @@ function KindTabs({
     { value: "tool", label: "Tools" },
     { value: "formula", label: "Formulae" },
     { value: "place", label: "Places" },
+    { value: "event", label: "Events" },
   ];
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -2347,7 +2441,7 @@ function TagActions({
 
 function ComposerForm({
   collection,
-  placesView,
+  tab,
   editing,
   defaults,
   restored,
@@ -2360,7 +2454,7 @@ function ComposerForm({
   onSubmit,
 }: {
   collection: Collection | null;
-  placesView: boolean;
+  tab: Tab;
   editing: Item | null;
   defaults: Draft;
   restored: boolean;
@@ -2374,17 +2468,15 @@ function ComposerForm({
 }) {
   // Mounted fresh per opening (keyed by the parent), so the kind and every
   // field start from `defaults`.
-  const [kind, setKind] = useState<"tool" | "formula" | "place">(
-    defaults.kind === "formula" || defaults.kind === "place"
-      ? defaults.kind
-      : placesView
-        ? "place"
-        : "tool",
+  const placesView = tab === "place";
+  const [kind, setKind] = useState<Kind>(
+    asKind(defaults.kind) ?? (tab === "all" ? "tool" : tab),
   );
   // What you paste picks the kind (a maps link is a place, any other link a
   // tool, anything else a command) until you pick one yourself. An edit keeps
   // the kind it was saved with.
-  const [picked, setPicked] = useState(!!editing);
+  // An event can't be told from its text, so opening on one counts as picked.
+  const [picked, setPicked] = useState(!!editing || kind === "event");
   // Everything behind "Add details" is optional: the server titles a tool from
   // its site and a formula from its command. Open when there is something in
   // them to see.
@@ -2394,12 +2486,18 @@ function ComposerForm({
     ),
   );
   const [saving, startSaving] = useTransition();
-  const main = kind === "formula" ? "cmd" : "url";
+  const event = kind === "event";
+  const main = kind === "formula" ? "cmd" : event ? "title" : "url";
   // Our own empty-field check (the form is noValidate): the browser's bubble
   // ignores the theme and floats over the layout instead of sitting in it.
   const [missing, setMissing] = useState(false);
   const shown: Failure | null = missing
-    ? { message: "Paste a link or a command first.", field: main }
+    ? {
+        message: event
+          ? "Name the event first."
+          : "Paste a link or a command first.",
+        field: main,
+      }
     : error;
 
   // One field takes focus — on open and again on a kind switch: capture costs
@@ -2413,7 +2511,11 @@ function ComposerForm({
   useEffect(() => {
     const name = error?.field;
     if (!name) return;
-    if (["title", "description", "tags"].includes(name)) setDetails(true);
+    if (
+      ["title", "description", "tags", "address"].includes(name) ||
+      (event && name === "url")
+    )
+      setDetails(true);
     requestAnimationFrame(() =>
       formRef.current
         ?.querySelector<HTMLElement>(
@@ -2421,7 +2523,7 @@ function ComposerForm({
         )
         ?.focus(),
     );
-  }, [error, formRef]);
+  }, [error, formRef, event]);
 
   // Ties a field to the error it caused, so it reads as invalid and the
   // message is announced with it.
@@ -2486,11 +2588,13 @@ function ComposerForm({
               firstRef.current = el;
             }}
             name={main}
-            aria-label="Link or command"
+            aria-label={event ? "Event name" : "Link or command"}
             required
             rows={1}
-            maxLength={kind === "formula" ? 8000 : 2048}
-            defaultValue={defaults.url ?? defaults.cmd}
+            maxLength={kind === "formula" ? 8000 : event ? 200 : 2048}
+            defaultValue={
+              event ? defaults.title : (defaults.url ?? defaults.cmd)
+            }
             placeholder={
               // Until a kind is in play the field takes either; after, it asks
               // for that kind's thing.
@@ -2499,13 +2603,14 @@ function ComposerForm({
                     tool: "Paste a link…",
                     formula: "Paste a command…",
                     place: "Paste a Google Maps or Apple Maps link…",
+                    event: "Name the event…",
                   }[kind]
                 : "Paste a link or a command…"
             }
-            autoCapitalize="off"
-            autoCorrect="off"
+            autoCapitalize={event ? undefined : "off"}
+            autoCorrect={event ? undefined : "off"}
             autoComplete="off"
-            spellCheck={false}
+            spellCheck={event}
             onChange={(e) => {
               const value = e.target.value;
               setMissing(false);
@@ -2531,6 +2636,37 @@ function ComposerForm({
           {/* The main field's error sits under it; the rest at the end. */}
           {shown?.field === main && <ErrorLine message={shown.message} />}
 
+          {/* When is what makes it an event, so it sits up front, not behind
+              the details. Native pickers: the phone's own wheel or calendar. */}
+          {event && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className={fieldLabel}>
+                Starts
+                <input
+                  type="datetime-local"
+                  name="startsAt"
+                  required
+                  defaultValue={defaults.startsAt}
+                  {...invalid("startsAt")}
+                  className={field}
+                />
+              </label>
+              <label className={fieldLabel}>
+                <span>
+                  Ends{" "}
+                  <span className="text-muted font-normal">(optional)</span>
+                </span>
+                <input
+                  type="datetime-local"
+                  name="endsAt"
+                  defaultValue={defaults.endsAt}
+                  {...invalid("endsAt")}
+                  className={field}
+                />
+              </label>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span id="composer-kind" className="text-label text-muted">
               Saving as
@@ -2540,9 +2676,9 @@ function ComposerForm({
             <div
               role="group"
               aria-labelledby="composer-kind"
-              className="border-field inline-grid grid-cols-3 rounded-md border p-0.5"
+              className="border-field inline-grid grid-cols-2 rounded-md border p-0.5 sm:grid-cols-4"
             >
-              {(["tool", "formula", "place"] as const).map((value) => (
+              {KINDS.map((value) => (
                 <button
                   key={value}
                   type="button"
@@ -2556,11 +2692,7 @@ function ComposerForm({
                   }`}
                 >
                   {kind === value && <span aria-hidden="true">✓</span>}
-                  {value === "tool"
-                    ? "Tool"
-                    : value === "formula"
-                      ? "Formula"
-                      : "Place"}
+                  {KIND_LABELS[value]}
                 </button>
               ))}
             </div>
@@ -2585,23 +2717,55 @@ function ComposerForm({
           hidden={!details}
           className="flex flex-col gap-3"
         >
-          <label className={fieldLabel}>
-            Title
-            <input
-              name="title"
-              maxLength={200}
-              defaultValue={defaults.title}
-              placeholder={
-                kind === "tool"
-                  ? "Defaults to the site"
-                  : kind === "place"
-                    ? "Defaults to the place's name"
-                    : "Defaults to the command"
-              }
-              {...invalid("title")}
-              className={field}
-            />
-          </label>
+          {event && (
+            <>
+              <label className={fieldLabel}>
+                Where
+                <input
+                  name="address"
+                  maxLength={300}
+                  defaultValue={defaults.address}
+                  placeholder="A venue, an address, or a room"
+                  {...invalid("address")}
+                  className={field}
+                />
+              </label>
+              <label className={fieldLabel}>
+                Link
+                <input
+                  name="url"
+                  maxLength={2048}
+                  defaultValue={defaults.url}
+                  placeholder="Tickets, the invite, the meeting"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  {...invalid("url")}
+                  className={field}
+                />
+              </label>
+            </>
+          )}
+
+          {/* An event's name is the main field above. */}
+          {!event && (
+            <label className={fieldLabel}>
+              Title
+              <input
+                name="title"
+                maxLength={200}
+                defaultValue={defaults.title}
+                placeholder={
+                  kind === "tool"
+                    ? "Defaults to the site"
+                    : kind === "place"
+                      ? "Defaults to the place's name"
+                      : "Defaults to the command"
+                }
+                {...invalid("title")}
+                className={field}
+              />
+            </label>
+          )}
 
           <label className={fieldLabel}>
             What it&apos;s for
@@ -3080,6 +3244,49 @@ function PlaceLink({ item, onOpen }: { item: Item; onOpen: () => void }) {
   );
 }
 
+// An event in the All view: when, then what, opening the calendar on its day.
+function EventLink({ item, onOpen }: { item: EventItem; onOpen: () => void }) {
+  const meta = [item.address, ...item.tags].filter(Boolean).join(" · ");
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className={`hover:bg-surface flex w-full items-center gap-4 px-3 py-4 text-left transition-colors duration-150 ${focusRing}`}
+      >
+        <span className="min-w-0 flex-1">
+          <span className="text-label text-accent block font-medium tabular-nums">
+            {formatWhen(item.startsAt, item.endsAt)}
+          </span>
+          <span
+            lang={langOf(item.title)}
+            className="text-title leading-thai text-ink line-clamp-2 block font-serif break-words sm:line-clamp-1"
+          >
+            {item.title}
+          </span>
+          {meta && (
+            <span
+              lang={langOf(meta)}
+              className="text-label text-muted mt-0.5 block truncate"
+            >
+              {meta}
+            </span>
+          )}
+        </span>
+        <span className="text-label text-accent hidden shrink-0 font-medium sm:inline">
+          Show in calendar
+        </span>
+        <span
+          aria-hidden="true"
+          className="text-title text-muted shrink-0 sm:hidden"
+        >
+          ›
+        </span>
+      </button>
+    </li>
+  );
+}
+
 // Full-size counterpart to RowTile: the og:image at a readable size, or the same
 // monogram fallback scaled up to the pane's ~1.9:1 frame.
 function PreviewTile({ item }: { item: Item }) {
@@ -3170,13 +3377,15 @@ function Empty({
     <div className="mt-16 max-w-md">
       <p className="text-title text-ink font-serif">Your stash is empty.</p>
       <p className="text-body text-muted mt-2">
-        Three things live here. A{" "}
+        Four things live here. A{" "}
         <strong className="text-ink font-semibold">tool</strong> is a link you
         keep losing. A{" "}
         <strong className="text-ink font-semibold">formula</strong> is a command
         you keep re-deriving. A{" "}
         <strong className="text-ink font-semibold">place</strong> is a maps link
-        to somewhere you mean to go.
+        to somewhere you mean to go. An{" "}
+        <strong className="text-ink font-semibold">event</strong> is a date you
+        don&apos;t want to miss.
       </p>
       {/* Keyboard shortcuts mean nothing on a phone. */}
       <p className="text-body text-muted mt-4 pointer-coarse:hidden">

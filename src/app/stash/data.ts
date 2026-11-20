@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne, or } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, or, sql } from "drizzle-orm";
 
 import { db } from "~/server/db";
 import {
@@ -40,6 +40,11 @@ const columns = {
   lat: items.lat,
   lng: items.lng,
   address: items.address,
+  // The wall time as the datetime-local input writes it (src/events.ts).
+  startsAt: sql<
+    string | null
+  >`to_char(${items.startsAt}, 'YYYY-MM-DD"T"HH24:MI')`,
+  endsAt: sql<string | null>`to_char(${items.endsAt}, 'YYYY-MM-DD"T"HH24:MI')`,
 };
 
 // Everything /stash renders for one account. Other accounts' items come only

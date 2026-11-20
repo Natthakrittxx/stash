@@ -17,7 +17,7 @@ import {
 // Exported because drizzle-kit only sees schemas a module exports.
 export const stashSchema = pgSchema("stash");
 
-export type ItemKind = "tool" | "formula" | "place";
+export type ItemKind = "tool" | "formula" | "place" | "event";
 
 export const items = stashSchema.table(
   "items",
@@ -39,7 +39,12 @@ export const items = stashSchema.table(
     // coordinates: the place still saves and lists as "Not on the map".
     lat: doublePrecision("lat"),
     lng: doublePrecision("lng"),
+    // A place's street address, or where an event happens.
     address: text("address"),
+    // An event's wall-clock time, no zone (src/events.ts): "19:00" stays 19:00
+    // wherever it is read. Its link, if any, rides in `url`.
+    startsAt: timestamp("starts_at", { mode: "string" }),
+    endsAt: timestamp("ends_at", { mode: "string" }),
     description: text("description").notNull().default(""),
     tags: text("tags")
       .array()
@@ -63,7 +68,15 @@ export const items = stashSchema.table(
       "items_kind_shape",
       sql`(${t.kind} = 'tool' AND ${t.url} IS NOT NULL AND ${t.cmd} IS NULL)
        OR (${t.kind} = 'formula' AND ${t.cmd} IS NOT NULL AND ${t.url} IS NULL)
-       OR (${t.kind} = 'place' AND ${t.url} IS NOT NULL AND ${t.cmd} IS NULL)`,
+       OR (${t.kind} = 'place' AND ${t.url} IS NOT NULL AND ${t.cmd} IS NULL)
+       OR (${t.kind} = 'event' AND ${t.cmd} IS NULL)`,
+    ),
+    // Only an event has a time, it always has a start, and it ends after it.
+    check(
+      "items_event_time",
+      sql`(${t.startsAt} IS NULL AND ${t.endsAt} IS NULL)
+       OR (${t.kind} = 'event' AND ${t.startsAt} IS NOT NULL
+           AND (${t.endsAt} IS NULL OR ${t.endsAt} >= ${t.startsAt}))`,
     ),
     // Half a coordinate is no pin at all, and only a place has one.
     check(
