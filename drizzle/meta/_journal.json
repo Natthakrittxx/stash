@@ -57,6 +57,13 @@
       "when": 1793547125934,
       "tag": "0007_first_signup_is_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795161492115,
+      "tag": "0008_events",
+      "breakpoints": true
     }
   ]
 }

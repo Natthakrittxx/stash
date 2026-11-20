@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -29,6 +29,13 @@ export default async function StashPage() {
         lat: items.lat,
         lng: items.lng,
         address: items.address,
+        // The wall time as the datetime-local input writes it (src/events.ts).
+        startsAt: sql<
+          string | null
+        >`to_char(${items.startsAt}, 'YYYY-MM-DD"T"HH24:MI')`,
+        endsAt: sql<
+          string | null
+        >`to_char(${items.endsAt}, 'YYYY-MM-DD"T"HH24:MI')`,
       })
       .from(items)
       .where(eq(items.userId, session.user.id))

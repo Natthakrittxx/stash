@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 
+import { isWallTime } from "~/events";
 import { text, titleOr } from "~/form";
 import { isMapsLink } from "~/maps";
 import { getSession } from "~/server/better-auth/server";
@@ -55,15 +56,39 @@ const shared = {
   tags: tagsField,
 };
 
-const itemSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("tool"), url: urlField, ...shared }),
-  z.object({
-    kind: z.literal("formula"),
-    cmd: z.string().trim().min(1, "A command is required.").max(8000),
-    ...shared,
-  }),
-  z.object({ kind: z.literal("place"), url: urlField, ...shared }),
-]);
+const itemSchema = z
+  .discriminatedUnion("kind", [
+    z.object({ kind: z.literal("tool"), url: urlField, ...shared }),
+    z.object({
+      kind: z.literal("formula"),
+      cmd: z.string().trim().min(1, "A command is required.").max(8000),
+      ...shared,
+    }),
+    z.object({ kind: z.literal("place"), url: urlField, ...shared }),
+    z.object({
+      kind: z.literal("event"),
+      ...shared,
+      title: shared.title.min(1, "Name the event."),
+      startsAt: wallTime("When does it start?"),
+      endsAt: wallTime("That end time isn't a date and time.").optional(),
+      // A ticket page or a meeting link, optional; an empty field is none.
+      url: urlField.optional(),
+      address: z.string().trim().max(300),
+    }),
+  ])
+  .superRefine((d, ctx) => {
+    // Wall times compare as strings: same shape, most significant first.
+    if (d.kind === "event" && d.endsAt && d.endsAt < d.startsAt)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "It can't end before it starts.",
+        path: ["endsAt"],
+      });
+  });
+
+function wallTime(message: string) {
+  return z.string().refine(isWallTime, message);
+}
 
 const pinSchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -102,12 +127,20 @@ function parse(formData: FormData) {
     // can then never reach the CHECK constraint and surface as a 500.
     ...(kind === "formula"
       ? { cmd: text(formData, "cmd") }
-      : { url: text(formData, "url") }),
+      : kind === "event"
+        ? {
+            startsAt: text(formData, "startsAt"),
+            endsAt: text(formData, "endsAt") || undefined,
+            url: text(formData, "url").trim() || undefined,
+            address: text(formData, "address"),
+          }
+        : { url: text(formData, "url") }),
   });
 }
 
 function toRow(data: z.infer<typeof itemSchema>) {
-  const url = data.kind === "formula" ? null : data.url;
+  const url = data.kind === "formula" ? null : (data.url ?? null);
+  const event = data.kind === "event" ? data : null;
   return {
     kind: data.kind,
     title: titleOr(data.title, url, data.kind === "formula" ? data.cmd : null),
@@ -115,6 +148,9 @@ function toRow(data: z.infer<typeof itemSchema>) {
     tags: data.tags,
     url,
     cmd: data.kind === "formula" ? data.cmd : null,
+    // Every kind writes these, so a row that stops being an event drops its time.
+    startsAt: event?.startsAt ?? null,
+    endsAt: event?.endsAt ?? null,
   };
 }
 
@@ -204,11 +240,16 @@ export async function createItem(formData: FormData): Promise<Result> {
   // preview: the map needs its pin the moment it lands.
   const place =
     row.kind === "place" && row.url
-      ? { ...(await placeRow(parsed.data, row.url, userId)), ...pinFrom(formData) }
+      ? {
+          ...(await placeRow(parsed.data, row.url, userId)),
+          ...pinFrom(formData),
+        }
       : {};
+  const where =
+    parsed.data.kind === "event" ? { address: parsed.data.address } : {};
   const [inserted] = await db
     .insert(items)
-    .values({ userId, ...row, ...place })
+    .values({ userId, ...row, ...place, ...where })
     .returning({ id: items.id });
 
   // Saved with a collection open (or undone out of some): file it there too,
@@ -255,7 +296,15 @@ export async function updateItem(
   let set: Partial<typeof items.$inferInsert> =
     row.kind === "formula"
       ? { ...row, image: null, lat: null, lng: null, address: null }
-      : { ...row, lat: null, lng: null, address: null };
+      : parsed.data.kind === "event"
+        ? {
+            ...row,
+            image: null,
+            lat: null,
+            lng: null,
+            address: parsed.data.address,
+          }
+        : { ...row, lat: null, lng: null, address: null };
   if (row.kind === "place" && row.url) {
     const [current] = await db
       .select({ kind: items.kind, url: items.url, title: items.title })
